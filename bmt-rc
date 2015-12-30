@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# PROVIDE:  bmt
+# REQUIRE:  sshd cron
+# KEYWORD:  shutdown
+
+. /etc/rc.subr
+
+name="bmt" 
+start_cmd="${name}_start" 
+stop_cmd="${name}_stop" 
+status_cmd="${name}_status"
+rcvar=${name}_enable
+
+PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/games:/usr/local/sbin:/usr/local/bin:/root/bin:/usr/local/ateam/bin" 
+
+bmt_start()
+{
+	${name} rcstart
+}
+
+bmt_stop()
+{
+	${name} rcstop
+}
+
+bmt_status()
+{
+	${name} list
+}
+
+load_rc_config $name
+run_rc_command "$@" 
+

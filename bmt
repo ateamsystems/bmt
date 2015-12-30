@@ -1,0 +1,935 @@
+#!/bin/sh
+# Bhyve Management Script 
+# Steven Douglas
+
+# Script Version
+VERSION="0.1.02"
+
+# What directory do the vms live in?
+VM_LIVES="/usr/local/vms"
+
+# Base zpath hack
+BASE_ZPATH="zroot/vms"
+
+vml_start () {
+		# Screen
+		if [ "$IN_SCREEN" != "YES" ]; then
+			`/usr/local/bin/screen -dmS bhyve."$VM_NAME" "$SCRIPT" start $VM_NAME is &`
+			exit
+		fi
+		
+		# Reboot loop
+		while [ 1 ]; do
+
+			# Execute the pre command
+			if [ "${VM_PRE_CMD}" != "" ]; then
+				`${VM_PRE_CMD}`
+			fi
+
+			# Destroy any existing VM's with my name
+			bhyvectl --vm=$VM_NAME --destroy 2> /dev/null
+
+			# Figure out the PCI devices
+			FINAL_PCI=""
+			I=2
+
+			# Networking Devices
+			for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+				PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+				BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
+				PREFIX_TAP="VM_N${j}_TAP_NUM"
+				TAP=`eval echo "\$""$PREFIX_TAP"`
+				
+				if [ "$TAP" != "" ]; then
+
+					if [ "$AUTO_NETWORKING" == "YES" ]; then
+						ifconfig tap${TAP} create 
+# 							TAP=`ifconfig tap create | tr -d "\n"`
+						ifconfig bridge$BRIDGE addm tap$TAP
+					fi
+
+					FINAL_PCI=$FINAL_PCI" -s $I,virtio-net,tap$TAP "
+					I=$((I+1))
+				fi
+			done
+
+			# Scrape any zvols from our current dataset as disks
+			echo "(hd0) /dev/zvol/$ZPATH/$VM_BOOT_ZVOL" > $SCRIPTPATH/device.map
+			if [ "$VM_CDROM" == "1" ] ; then
+				echo "(cd0) $VM_CDROM_MEDIA" >> $SCRIPTPATH/device.map
+				FINAL_PCI=$FINAL_PCI" -s $I,ahci-cd,$VM_CDROM_MEDIA "
+				I=$((I+1))
+				BOOT_DEVICE="cd0"
+			else
+				BOOT_DEVICE="hd0,msdos"$VM_BOOT_PART
+			fi
+			for ds in `zfs list -r -H -t volume -o name $ZPATH`
+			do
+			  FINAL_PCI=$FINAL_PCI" -s $I,ahci-hd,/dev/zvol/$ds "
+			  echo "Adding disk $ds"
+			  I=$((I+1))
+			done
+
+
+			# Make sure that FreeBSD can see the boot vol's partitions
+			gpart list zvol/${ZPATH}/${VM_BOOT_ZVOL} >> /tmp/caker
+
+			# FreeBSD
+			if [ "$VM_QUIRK" == "0" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					bhyveload -d $VM_CDROM_MEDIA -m $VM_MEMORY"M" $VM_NAME
+				else
+					bhyveload -d "/dev/zvol/$ZPATH/$VM_BOOT_ZVOL" -m $VM_MEMORY"M" $VM_NAME
+				fi
+			# Quirk CentOS 6.x
+			elif [ "$VM_QUIRK" == "1" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					rm $SCRIPTPATH/grub.cfg
+					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
+					echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+				else
+					# Generate grub.cfg
+					MOUNTPOINT="/tmp/$VM_NAME"
+					mkdir $MOUNTPOINT
+					ext4fuse /dev/zvol/$ZPATH/$VM_BOOT_ZVOL"s"$VM_BOOT_PART $MOUNTPOINT
+					VMLINUZ_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "vmlinuz*" | sed -e "s,$MOUNTPOINT,,g" | sort | tail -n 1`
+					INITRAMFS_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "initramfs*" | sed -e "s,$MOUNTPOINT,,g " | sort | tail -n 1`
+					umount "$MOUNTPOINT"
+					rmdir "$MOUNTPOINT"
+
+
+					rm $SCRIPTPATH/grub.cfg
+					echo "set root=($BOOT_DEVICE)" >> $SCRIPTPATH/grub.cfg
+					echo "linux (hd0,msdos$VM_BOOT_PART)$VMLINUZ_PATH root=/dev/sda""$VM_BOOT_PART" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (hd0,msdos$VM_BOOT_PART)$INITRAMFS_PATH" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+
+
+					# Run Grub
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+			# Quirk CentOS 7.x
+			elif [ "$VM_QUIRK" == "2" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					rm $SCRIPTPATH/grub.cfg
+					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
+					echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+				else
+					/usr/local/sbin/grub-bhyve -d /boot/grub2 -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+
+			# Quirk Ubuntu
+			elif [ "$VM_QUIRK" == "3" ]; then
+				/usr/local/sbin/grub-bhyve -d /boot/grub/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+			# Quirk netbsd
+			elif [ "$VM_QUIRK" == "4" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					rm $SCRIPTPATH/grub.cfg
+					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
+					echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+				else
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+
+			# Quirk arch
+			elif [ "$VM_QUIRK" == "5" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					rm $SCRIPTPATH/grub.cfg
+					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
+					echo "linux (cd0)/arch/boot/x86_64/vmlinuz" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (cd0)/arch/boot/x86_64/archiso.img" >> $SCRIPTPATH/grub.cfg
+#					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+				else
+					/usr/local/sbin/grub-bhyve -d /boot/grub2 -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+
+			else
+				echo "VM_QUIRK NOT SET"
+			fi
+
+			/usr/sbin/bhyve -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 1,lpc $FINAL_PCI -l com1,stdio $VM_NAME
+			bhyve_exit=$?
+
+			# Clean up the vm, its time to destroy it.
+			bhyvectl --vm=$VM_NAME --destroy 2> /dev/null
+
+
+			# Only loop if the exit code was 0 (reboot)
+			if [ $bhyve_exit -ne 0 ]; then
+				echo "VM Shutdown detected, not looping."
+				break
+			else
+				echo "VM Reboot detected, looping"
+			fi
+
+		done
+
+		# Tidy up any auto networking that was done
+		for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+			PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+			BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
+			PREFIX_TAP="VM_N${j}_TAP_NUM"
+			TAP=`eval echo "\$""$PREFIX_TAP"`
+			
+			if [ "$TAP" != "" ]; then
+				if [ "$AUTO_NETWORKING" == "YES" ]; then
+					ifconfig bridge$BRIDGE deletem tap$TAP 2> /dev/null
+					ifconfig tap$TAP destroy 2> /dev/null
+				fi
+			fi
+		done
+	
+	if [ "${VM_POST_CMD}" != "" ]; then
+		`${VM_POST_CMD}`
+	fi
+}
+
+vml_stat() {
+#	bhyvectl --vm=$VM_NAME --get-all | wc -l | tr -d " " | tr -d "\n"
+	if [ "`bhyvectl --vm=$VM_NAME --get-all | wc -l | tr -d " " | tr -d "\n"`" == "1" ]; then
+		return 0
+	else
+		return 1
+	fi
+}
+
+vml_attach(){
+	vml_stat
+	if [ "$?" == "1" ]; then
+		screen -r bhyve."$VM_NAME"
+	else
+		echo "VM is not running"
+	fi
+
+}
+
+vml_status(){
+	vml_stat
+	if [ "$?" == "1" ]; then
+		echo "VM is running"
+	else
+		echo "VM is not running"
+	fi
+
+}
+
+
+vml_list () {
+	out=`find $VM_LIVES | grep vm.conf`
+	RUNNING=""
+	for vm in $out; do
+		. $vm
+		LENGTH=`echo "$VM_NAME" | wc -c | tr -d " " | tr -d "\n"`
+		PADDING=`expr 20 - $LENGTH`
+		PADDING_STR=""
+		for i in `seq 0 $PADDING`; do
+			PADDING_STR="$PADDING_STR"" "
+		done
+
+
+
+		TYPE=$( vml_quirk_to_text )
+		vml_stat
+		if [ "$?" == "1" ]; then
+			STATE="UP  "
+		else
+			STATE="DOWN"
+		fi
+			RUNNING="$RUNNING $VM_NAME $PADDING_STR $TYPE $STATE    $VM_CPUS     $VM_MEMORY    $VM_ONBOOT\n"
+	done
+	printf "Machine                Type          State   CPU's Memory Onboot\n"
+	printf "$RUNNING"	
+}
+
+quick_padding () {
+	LENGTH=`echo ${1} | wc -c | tr -d "\n"`
+	PAD_CHAR=`expr ${2} - ${LENGTH}`
+	for a in `seq 1 $PAD_CHAR`; do
+		printf " "
+	done
+}
+
+vml_rcstart () {
+
+echo "bhyve management tool"
+
+
+	# Kernel modules
+	if [ "${bmt_kern_modules}" == "" ]; then
+		bmt_kern_modules="vmm if_tap if_bridge"
+		printf " * loading default kernel modules:\n"
+	else
+		printf " * loading user kernel modules: \n"
+	fi
+
+
+	for MOD in ${bmt_kern_modules}; do
+		printf "     * ${MOD}"
+		kldload $MOD > /dev/null 2>&1
+		printf "$( quick_padding $MOD 20 )"
+		echo "done"
+	done
+
+	# Sysctls
+	if [ "${bmt_sysctls}" == "" ]; then
+		bmt_sysctls="net.link.tap.up_on_open=1"
+		printf " * loading default sysctls:\n"
+	else
+		printf " * loading user sysctls: \n"
+	fi
+
+
+	for MOD in ${bmt_sysctls}; do
+		echo "     * ${MOD}"
+		sysctl $MOD > /dev/null 2>&1
+	done
+		
+
+#	sysctl net.link.tap.up_on_open=1
+
+	# Virtual Machines
+	out="`find $VM_LIVES | grep vm.conf`"
+	printf " * starting vms: \n"
+	for vm in $out; do
+		. $vm 
+
+		if [ "$VM_ONBOOT" == "YES" ]; then
+			printf "     * ${VM_NAME}"
+			$SCRIPT start $VM_NAME
+			printf "$( quick_padding $VM_NAME 20 )"
+			echo "done"
+		fi
+	done
+	echo "bmt init finished"	
+}
+
+vml_wait_for_poweroff(){
+	while true; do
+		vml_stat
+		if [ "$?" == "0" ]; then	
+			break	
+		fi	
+	done
+}
+
+vml_rcstop() {
+	printf "bmt stopping all running vms: \n"
+	out=`find $VM_LIVES | grep vm.conf`
+
+	# Quick stop loop
+        for vm in $out; do
+		. $vm
+		vml_stop -q 
+	done
+
+	# Wait for things to actually stop
+        for vm in $out; do
+		. $vm
+		printf "     * ${VM_NAME}"
+		while true; do
+			vml_stat
+			if [ "$?" == "0" ]; then	
+				break	
+			fi	
+		done
+		printf "$( quick_padding $VM_NAME 20 )"
+		echo "done"
+	done
+
+	# Kernel modules
+	if [ "${bmt_kern_modules}" == "" ]; then
+		bmt_kern_modules="vmm if_tap if_bridge"
+		printf " * unloading default kernel modules:\n"
+	else
+		printf " * unloading user kernel modules: \n"
+	fi
+
+
+	for MOD in ${bmt_kern_modules}; do
+		printf "     * ${MOD}"
+		kldunload $MOD > /dev/null 2>&1
+		printf "$( quick_padding $MOD 20 )"
+		echo "done"
+	done
+
+
+
+	printf "bmt shutdown finished\n"
+}
+
+vml_stop () {
+	if [ "$ARG_FORCE" == "-f" ]; then
+		bhyvectl --vm=$VM_NAME --force-poweroff
+		bhyvectl --vm=$VM_NAME --destroy
+	else
+		vml_stat
+		if [ "$?" == "1" ]; then
+			tpid=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $2}'`
+			kill -TERM $tpid
+		else
+			if [ "$1" != "-q" ]; then
+				echo "VM is not running"
+			fi
+		fi
+	fi
+}
+
+vml_destroy () {
+	ARG_FORCE="YES"
+	vml_stop  
+	zfs destroy -r $ZPATH
+	echo "$VM_NAME destroyed"
+}
+
+vml_edit () {
+	$EDITOR $VM_ROOT"/vm.conf"
+}
+
+vml_vm_exists () {
+	if [ -f "${VM_LIVES}/${VM_NAME}/vm.conf" ]; then
+		return 1
+	else
+		return 0
+	fi	
+}
+
+vml_clone () {
+	
+
+	# If the VM is running, error and exit
+	if [ "$FORCE" == "YES" ]; then
+		vml_stop
+		echo "Waiting for vm to poweroff..."
+		vml_wait_for_poweroff
+		echo "VM Powered off"
+	else
+		vml_stat
+	
+		if [ "$?" == "1" ]; then
+			echo "VM is running. Use -f flag to shutdown before migration"
+			exit
+		fi
+	fi	
+
+	# Actually do the clone
+	SNAPSHOT_NAME="`date +'%s'`_clone_${ARG_BONUS}"
+
+	zfs snapshot -r ${ZPATH}@${SNAPSHOT_NAME}
+	zfs clone ${ZPATH}@${SNAPSHOT_NAME} ${BASE_ZPATH}/$ARG_BONUS
+	# Clone all of the zvols into their destination
+	for ds in `zfs list -r -H -t volume -o name $ZPATH`
+	do
+		DS_NAME=${ds##*/}
+		zfs clone ${ds}@${SNAPSHOT_NAME} ${BASE_ZPATH}/${ARG_BONUS}/${DS_NAME}
+	done
+
+	# Rename the VM in the configuration file
+	sed -i -- "s/VM_NAME=\"${VM_NAME}\"/VM_NAME=\"${ARG_BONUS}\"/g" ${VM_LIVES}/${ARG_BONUS}/vm.conf
+	rm ${VM_LIVES}/${ARG_BONUS}/vm.conf--	
+}
+
+vml_rename () {
+	vml_stat
+
+	if [ "$?" == "1" ]; then
+		echo "The VM cannot be renamed while running"
+		exit
+	fi
+
+	VM_NAME_TEMP="${VM_NAME}"
+	VM_NAME="${ARG_BONUS}"
+	vml_require_no_exist
+	VM_NAME="${VM_NAME_TEMP}"
+
+	zfs rename ${ZPATH} ${BASE_ZPATH}/${ARG_BONUS}
+	sed -i -- "s/VM_NAME=\"${VM_NAME}\"/VM_NAME=\"${ARG_BONUS}\"/g" ${VM_LIVES}/${ARG_BONUS}/vm.conf
+	rm ${VM_LIVES}/${ARG_BONUS}/vm.conf--	
+}
+
+vml_send () {
+	if [ "$FORCE" == "YES" ]; then
+		vml_stop
+		echo "Waiting for vm to poweroff..."
+		vml_wait_for_poweroff
+		echo "VM Powered off"
+	else
+		vml_stat
+	
+		if [ "$?" == "1" ]; then
+			echo "VM is running. Use -f flag to shutdown before migration"
+			exit
+		fi
+	fi	
+
+	# Actually do the export
+	SNAPSHOT_NAME="`date +'%s'`_send"
+
+	zfs snapshot -r ${ZPATH}@${SNAPSHOT_NAME}
+	zfs send -R ${ZPATH}@${SNAPSHOT_NAME}
+#	zfs send -vR ${ZPATH}@${SNAPSHOT_NAME}
+}
+
+vml_require_no_exist () {
+	vml_vm_exists
+	if [ "$?" == "1" ]; then
+		echo "VM ${VM_NAME} already exists."
+		exit
+	fi
+}
+
+vml_require_exist () {
+	vml_vm_exists
+	if [ "$?" == "0" ]; then
+		echo "VM ${VM_NAME} doesn't exist"
+		exit
+	fi
+
+}
+
+vml_require_off () {
+	vml_stat
+	if [ "$?" == "1" ]; then
+		echo "VM ${VM_NAME} cannot be running"
+		exit
+	fi
+}
+
+vml_receive () {
+	vml_require_no_exist
+	zfs receive ${BASE_ZPATH}/${VM_NAME}
+	OLD_VM_NAME=`cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep VM_NAME`
+	sed -i -- "s/${OLD_VM_NAME}/VM_NAME=\"${VM_NAME}\"/g" ${VM_LIVES}/${VM_NAME}/vm.conf
+	
+}
+
+vml_usage (){
+	echo "
+USAGE:
+bmt attach [vm_name]
+bmt create [vm name] [-V VOLSIZE[K,M,G,T ETC]
+bmt clone [vm name] [new vm name]
+bmt destroy [vm_name]
+bmt edit [vm_name]
+bmt list 
+bmt rcstart
+bmt rcstop
+bmt receive [new_vm_name] 
+bmt rename [current vm name] [new vm name]
+bmt send [vm_name] 
+bmt start [vm_name]
+bmt status [vm_name]
+bmt stop [vm_name] [-f]
+
+
+"
+}
+
+vml_get() {
+	vml_getreal ${VM_NAME} ${ARG_BONUS}
+}
+
+vml_getreal () {
+	VM_NAME=${1}
+	ARG_BONUS=${2}
+	
+	# make sure that variable exists in the config
+	if [ "`grep ${ARG_BONUS}= ${VM_LIVES}/${VM_NAME}/vm.conf | wc -l | tr -d " "`" == 1 ]; then
+		echo `cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep ${ARG_BONUS} | tr -d " " | cut -d = -f2 | tr -d \"`
+	else
+		echo "unset"
+	fi
+
+}
+
+vml_setreal () {
+	VM_NAME=${1}
+	ARG_BONUS=${2}
+	ARG_VAL=${3}
+	CUR_VAL=$( vml_getreal ${VM_NAME} ${ARG_BONUS} )  
+	if [ "`grep ${ARG_BONUS}= ${VM_LIVES}/${VM_NAME}/vm.conf | wc -l | tr -d " "`" == 1 ]; then
+		# Setting already exists, so we need to replace it dynamically.
+		sed -i.bak "s/${ARG_BONUS}=\"${CUR_VAL}\"/${ARG_BONUS}=\"${ARG_VAL}\"/g" ${VM_LIVES}/${VM_NAME}/vm.conf
+
+	else
+
+		echo "${ARG_BONUS}=\"${ARG_VAL}\"" >> ${VM_LIVES}/${VM_NAME}/vm.conf
+		echo "${VM_NAME} ${ARG_BONUS}= [unset] => ${ARG_VAL}"
+	fi
+
+}
+
+vml_set (){
+	vml_setreal ${VM_NAME} ${ARG_BONUS} ${ARG_VAL}
+}
+vml_create () {
+	# Syntax
+	# bmt create [ vm ] [ bonus ( volume size) ]	
+
+	if [ "$ARG_BONUS" == "" ]; then
+		ZVOL_SIZE="10G"
+	else
+		ZVOL_SIZE=$ARG_BONUS
+	fi
+	ZPATH=`zfs list -o name,mountpoint | grep $VM_LIVES | head -n 1 | cut -d " " -f1`
+	zfs create "$ZPATH/$VM_NAME"
+	zfs create -V "$ZVOL_SIZE" -o refreservation=none "$ZPATH/$VM_NAME/disk"
+	echo "#!/bin/sh
+
+# VM SETTINGS
+	VM_NAME=\"$VM_NAME\""'
+	VM_CPUS="1"
+	VM_MEMORY="1024"
+	VM_ONBOOT="YES"
+	VM_BOOT_ZVOL="disk"
+	VM_BOOT_PART="1"
+	VM_PRE_CMD=""
+	VM_POST_CMD=""
+
+# CDROM
+	VM_CDROM="0"
+	VM_CDROM_MEDIA=""
+
+# Networking
+# 	( Up to 12 nics are possible following the same naming convention )
+	AUTO_NETWORKING="YES"
+	VM_N1_BRIDGE_NUM=""
+	VM_N1_TAP_NUM=""
+
+	VM_N2_BRIDGE_NUM=""
+	VM_N2_TAP_NUM=""
+
+
+
+# Linux quirk code linux is unpredictable. Assign the quirk code according to what you 
+#       need to run.
+#       * 0 FreeBSD
+#       * 1 CentOS 6.x
+#       * 2 CentOS 7.x
+#       * 3 Ubuntu 15.04
+VM_QUIRK="0"
+
+	' > "$VM_LIVES/$VM_NAME/vm.conf"
+}
+
+vml_setup () {
+	zfs create -o compression=lz4 -o mountpoint=/usr/local/vms/ zroot/vms
+}
+
+vml_quirk_to_text () {
+
+	case $VM_QUIRK in
+		0) VM="FreeBSD      ";;
+		1) VM="CentOS 6.X   ";;
+		2) VM="Centos 7     ";;
+		3) VM="Ubuntu       ";;
+		4) VM="Netbsd	    ";;
+		*) VM="idk          ";;
+	esac
+	echo "${VM}"
+
+}
+
+vml_sanity () {
+	# These are the required binaries
+	REQUIRED_BINARIES="screen"
+
+	for bin in $REQUIRED_BINARIES; do
+		if [ ! -f "`whereis -qb ${bin}`" ]; then
+			echo "${bin} not installed, and it is required"
+			FATAL="YES"
+		fi
+	done
+
+	# These are the optional binaries
+	OPTIONAL_BINARIES="grub-bhyve ext4fuse"
+
+	for bin in $OPTIONAL_BINARIES; do
+		if [ ! -f "`whereis -qb ${bin}`" ]; then
+			echo "${bin} not installed, but it is optional"
+		fi
+	done
+
+	if [ "${FATAL}" == "YES" ]; then
+		echo "There were fatal errors"
+		exit
+	fi
+
+	# Is the ZPATH set up yet?
+	BASE_ZPATH=`zfs get bvm: | grep -v inherited | grep yes | head -n 1 | cut -d " " -f 1`
+	if [ "${BASE_ZPATH}" == "" ]; then
+		echo "BMT does not appear to be set up yet. Please run bmt setup."
+		exit
+	fi
+
+}
+
+############################################## MAIN
+
+# check setup
+#vml_sanity
+
+
+
+# Argument Handling
+# bmt [ action ] [ vm ] [ bonus ] 
+# bmt create [ vm ] 
+
+# Flags
+for arg in $*
+do
+	case $arg in
+
+
+		f)
+			ARG_FORCE="YES"
+		;;
+
+		is)
+			# This hack allows the start command to launch screens without looping
+			IN_SCREEN="YES"
+			echo "IN SCREEN DETECTED"
+		;;
+
+		q) 
+			ARG_QUIET="YES"
+		;;
+
+		c)
+			echo "Clear"
+		;;
+
+		
+	esac
+
+done
+
+
+# Where are we executing from?
+SCRIPT=$(readlink -f "$0")
+
+# Argument $1, action
+	
+	# Check if the first argument is set
+	ARG_ACTION="$1"
+	if [ "$ARG_ACTION" == "" ]; then
+		echo "Argument action not provided"
+		exit
+	fi
+
+	# Make sure a valid action is provided
+	case $ARG_ACTION in
+		attach)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+		clone)
+			BONUS_REQUIRED="YES"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="NO"
+		;;
+
+		create)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			if [ "$2" == "" ]; then
+				echo "No vm name provided to create"
+				exit
+			else
+				VM_NAME=$2
+			fi
+			ROOT_REQUIRED="YES"
+		;;
+
+		destroy)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+
+		edit)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+		get)
+			BONUS_REQUIRED="YES"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+		list)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			ROOT_REQUIRED="NO"
+		;;
+
+		rcstart)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			ROOT_REQUIRED="YES"
+		;;
+
+		rcstop)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			ROOT_REQUIRED="YES"
+		;;
+
+		receive)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			VM_NAME="${2}"
+			ROOT_REQUIRED="NO"
+		;;
+	
+		rename)
+			BONUS_REQUIRED="YES"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+		sanity)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			ROOT_REQUIRED="NO"
+		;;
+
+		send)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="NO"
+		;;
+		
+		set)
+			BONUS_REQUIRED="YES"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+			if [ "${4}" == "" ]; then
+				echo "Value argument not set."
+				exit
+			else
+				ARG_VAL=${4}
+			fi
+		;;
+	
+		setup)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			SETUP_POOL="zroot"
+			ROOT_REQUIRED="YES"
+		;;
+	
+		start)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+		;;
+
+		status)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="NO"
+		;;
+
+		stop)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="YES"
+			if [ "$3"=="-f" ]; then
+				ARG_FORCE="-f"
+			fi
+		;;
+
+		vm_exists)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			VM_NAME="${2}"
+			ROOT_REQUIRED="NO"
+		;;
+
+		wait_for_poweroff)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="YES"
+			ROOT_REQUIRED="NO"
+		;;
+	
+		*)
+			echo "$ARG_ACTION is an invalid action"
+			vml_usage
+			exit
+		;;
+	esac	
+
+# Are we root?
+if [ "${ROOT_REQUIRED}" == "YES" ]; then
+	if [ "`whoami | tr -d \"\\n\"`" != "root" ]; then
+		echo "The $ARG_ACTION action requires root"
+		exit
+	fi
+fi
+		
+# Deal with the VM_NAME, if necessary
+if [ "$VM_REQUIRED" == "YES" ] ; then
+	VM_NAME=$2
+
+	if [ "$VM_NAME" == "" ]; then
+		echo "No vm name provided"
+		exit
+	fi
+
+	vml_require_exist
+	
+
+	# Source the configuration
+	VM_ROOT="${VM_LIVES}/${VM_NAME}"
+	. "${VM_ROOT}/vm.conf"
+
+	SCRIPTPATH="$VM_ROOT"
+	ZPATH=`zfs list -o name,mountpoint | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1`
+
+fi
+
+# Deal with bonus $3
+if [ "$BONUS_REQUIRED" == "YES" ]; then
+
+	if [ "$3" != "" ]; then
+		ARG_BONUS="$3"
+	else
+		echo "Not enough arguments"
+		exit
+	fi
+fi
+
+# Early escape if we are listing
+#if [ "$1" == "list" ] || [ "$1" == "rcstart" ] || [ "$1" == "rcstop" ]; then
+#	vml_$1 $@
+#	exit
+#fi
+
+# Early escape if we are creating
+#if [ "$2" == "create" ] ; then
+#	vml_$2 $@
+#	exit
+#fi
+
+
+vml_$ARG_ACTION
