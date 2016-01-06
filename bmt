@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.02"
+VERSION="0.1.03"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -130,13 +130,21 @@ vml_start () {
 			elif [ "$VM_QUIRK" == "3" ]; then
 				/usr/local/sbin/grub-bhyve -d /boot/grub/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
-			# Quirk netbsd
+			# Quirk Fedora 
 			elif [ "$VM_QUIRK" == "4" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					/usr/local/sbin/grub-bhyve -d /isolinux/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				else
+					/usr/local/sbin/grub-bhyve -d /grub2/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+
+			# Quirk arch			
+			elif [ "$VM_QUIRK" == "5" ]; then
 				if [ "$VM_CDROM" == "1" ]; then
 					rm $SCRIPTPATH/grub.cfg
 					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
-					echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
-					echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
+					echo "linux (cd0)/arch/boot/x86_64/vmlinuz archisobasedir=arch archisolabel=ARCH_201601" >> $SCRIPTPATH/grub.cfg
+					echo "initrd (cd0)/arch/boot/x86_64/archiso.img" >> $SCRIPTPATH/grub.cfg
 					echo "boot" >> $SCRIPTPATH/grub.cfg
 					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
@@ -144,19 +152,37 @@ vml_start () {
 					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 				fi
 
-			# Quirk arch
-			elif [ "$VM_QUIRK" == "5" ]; then
+			# Quirk NetBSD 
+			elif [ "$VM_QUIRK" == "6" ]; then
 				if [ "$VM_CDROM" == "1" ]; then
 					rm $SCRIPTPATH/grub.cfg
-					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
-					echo "linux (cd0)/arch/boot/x86_64/vmlinuz" >> $SCRIPTPATH/grub.cfg
-					echo "initrd (cd0)/arch/boot/x86_64/archiso.img" >> $SCRIPTPATH/grub.cfg
-#					echo "boot" >> $SCRIPTPATH/grub.cfg
+#					echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
+					echo "knetbsd -h -r cd0a (cd0)/netbsd" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
 					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
 				else
-					/usr/local/sbin/grub-bhyve -d /boot/grub2 -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+					rm $SCRIPTPATH/grub.cfg
+					echo "knetbsd -h -r wd0a (${BOOT_DEVICE})/netbsd" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 				fi
+
+			# Quirk OpenBSD
+			elif [ "$VM_QUIRK" == "7" ]; then
+				if [ "$VM_CDROM" == "1" ]; then
+					rm $SCRIPTPATH/grub.cfg
+					echo "kopenbsd -h com0 (cd0)/5.8/amd64/bsd.rd" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+
+				else
+					rm $SCRIPTPATH/grub.cfg
+					echo "kopenbsd -h com0 -r sd0a (hd0,openbsd${BOOT_PART})/bsd" >> $SCRIPTPATH/grub.cfg
+					echo "boot" >> $SCRIPTPATH/grub.cfg
+					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+				fi
+
 
 			else
 				echo "VM_QUIRK NOT SET"
@@ -621,6 +647,10 @@ vml_create () {
 #       * 1 CentOS 6.x
 #       * 2 CentOS 7.x
 #       * 3 Ubuntu 15.04
+#	* 4 Fedora 23
+#	* 5 Arch
+#	* 6 NetBSD
+#	* 7 OpenBSD5.8
 VM_QUIRK="0"
 
 	' > "$VM_LIVES/$VM_NAME/vm.conf"
