@@ -931,10 +931,26 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
 
 	# Source the configuration
 	VM_ROOT="${VM_LIVES}/${VM_NAME}"
+
+	if ! [ -d "${VM_ROOT}" ]; then
+	   echo " >>> ERROR: Invalid VM_ROOT \"${VM_ROOT}\"";
+	   exit 1;
+	fi
+
+	if ! [ -r "${VM_ROOT}/vm.conf" ]; then
+	   echo " >>> ERROR: vm.conf missing from ${VM_ROOT}";
+	   exit 1;
+	fi
+
 	. "${VM_ROOT}/vm.conf"
 
 	SCRIPTPATH="$VM_ROOT"
-	ZPATH=`zfs list -o name,mountpoint | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1`
+	ZPATH=`zfs list -o name,mountpoint | sed -e s:"//":"/":g | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1`
+
+	if [ -z "${ZPATH}" ]; then
+		echo " >>> ERROR: Could not establish ZPATH for $VM_ROOT";
+		exit 1;
+	fi
 
 fi
 
