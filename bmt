@@ -257,7 +257,7 @@ vml_status(){
 
 vml_list () {
 	out=`find $VM_LIVES | grep vm.conf`
-   COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
+	COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
    
 	printf "${COL_FORMAT}" "Machine" "Type" "State" "CPUs" "Memory" "Onboot";
    
