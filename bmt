@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.03"
+VERSION="0.1.04"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -257,18 +257,12 @@ vml_status(){
 
 vml_list () {
 	out=`find $VM_LIVES | grep vm.conf`
-	RUNNING=""
+   COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
+   
+	printf "${COL_FORMAT}" "Machine" "Type" "State" "CPUs" "Memory" "Onboot";
+   
 	for vm in $out; do
 		. $vm
-		LENGTH=`echo "$VM_NAME" | wc -c | tr -d " " | tr -d "\n"`
-		PADDING=`expr 20 - $LENGTH`
-		PADDING_STR=""
-		for i in `seq 0 $PADDING`; do
-			PADDING_STR="$PADDING_STR"" "
-		done
-
-
-
 		TYPE=$( vml_quirk_to_text )
 		vml_stat
 		if [ "$?" == "1" ]; then
@@ -276,10 +270,9 @@ vml_list () {
 		else
 			STATE="DOWN"
 		fi
-			RUNNING="$RUNNING $VM_NAME $PADDING_STR $TYPE $STATE    $VM_CPUS     $VM_MEMORY    $VM_ONBOOT\n"
+      
+		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "$VM_CPUS" "$VM_MEMORY" "$VM_ONBOOT";
 	done
-	printf "Machine                Type          State   CPU's Memory Onboot\n"
-	printf "$RUNNING"	
 }
 
 quick_padding () {
