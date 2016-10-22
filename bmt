@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.04"
+VERSION="0.1.05"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -69,7 +69,18 @@ vml_start () {
 			  echo "Adding disk $ds"
 			  I=$((I+1))
 			done
-
+         
+         # Add Framebuffer
+			if [ "$VM_FRAMEBUFFER" == "1" ] ; then
+				FINAL_PCI=$FINAL_PCI" -s $I,fbuf,$VM_FRAMEBUFFER_OPTS "
+				I=$((I+1))
+			fi
+         
+         # Add USB 3.0
+			if [ "$VM_USB3" == "1" ] ; then
+				FINAL_PCI=$FINAL_PCI" -s $I,xhci,tablet "
+				I=$((I+1))
+			fi
 
 			# Make sure that FreeBSD can see the boot vol's partitions
 			gpart list zvol/${ZPATH}/${VM_BOOT_ZVOL} >> /tmp/caker
@@ -183,12 +194,16 @@ vml_start () {
 					/usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 				fi
 
+			# Quirk Windows10
+			elif [ "$VM_QUIRK" == "8" ]; then
+            #echo "Windows 10 ... nothing to do :P"
+            USE_BOOTROM="-l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd";
 
 			else
 				echo "VM_QUIRK NOT SET"
 			fi
 
-			/usr/sbin/bhyve -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 1,lpc $FINAL_PCI -l com1,stdio $VM_NAME
+			/usr/sbin/bhyve -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 31,lpc $FINAL_PCI -l com1,stdio $USE_BOOTROM $VM_NAME
 			bhyve_exit=$?
 
 			# Clean up the vm, its time to destroy it.
@@ -256,7 +271,7 @@ vml_status(){
 
 
 vml_list () {
-	out=`find $VM_LIVES | grep vm.conf`
+	out=`find $VM_LIVES | grep /vm.conf`
 	COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
    
 	printf "${COL_FORMAT}" "Machine" "Type" "State" "CPUs" "Memory" "Onboot";
@@ -632,18 +647,27 @@ vml_create () {
 	VM_N2_BRIDGE_NUM=""
 	VM_N2_TAP_NUM=""
 
+# Framebuffer
+#
+	VM_FRAMEBUFFER="0"
+	VM_FRAMEBUFFER_OPTS="tcp=0.0.0.0:5900,wait"
 
+# USB 3.0
+#
+        VM_USB3="0"
 
-# Linux quirk code linux is unpredictable. Assign the quirk code according to what you 
-#       need to run.
-#       * 0 FreeBSD
-#       * 1 CentOS 6.x
-#       * 2 CentOS 7.x
-#       * 3 Ubuntu 15.04
+# Linux quirk code linux is unpredictable. Assign the quirk code according
+# to what you need to run.
+#
+#	* 0 FreeBSD
+#	* 1 CentOS 6.x
+#	* 2 CentOS 7.x
+#	* 3 Ubuntu 15.04
 #	* 4 Fedora 23
 #	* 5 Arch
 #	* 6 NetBSD
 #	* 7 OpenBSD5.8
+#	* 8 Windows 10
 VM_QUIRK="0"
 
 	' > "$VM_LIVES/$VM_NAME/vm.conf"
@@ -660,8 +684,11 @@ vml_quirk_to_text () {
 		1) VM="CentOS 6.X   ";;
 		2) VM="Centos 7     ";;
 		3) VM="Ubuntu       ";;
-		4) VM="Netbsd	    ";;
-		*) VM="idk          ";;
+		5) VM="Arch         ";;
+		6) VM="NetBSD       ";;
+		7) VM="OpenBSD      ";;
+		8) VM="Windows 10   ";;
+		*) VM="UNKOWN       ";;
 	esac
 	echo "${VM}"
 
