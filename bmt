@@ -688,7 +688,7 @@ vml_quirk_to_text () {
 		6) VM="NetBSD       ";;
 		7) VM="OpenBSD      ";;
 		8) VM="Windows 10   ";;
-		*) VM="UNKOWN       ";;
+		*) VM="UNKNOWN      ";;
 	esac
 	echo "${VM}"
 
