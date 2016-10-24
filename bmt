@@ -66,7 +66,15 @@ vml_start () {
 			for ds in `zfs list -r -H -t volume -o name $ZPATH`
 			do
 			  FINAL_PCI=$FINAL_PCI" -s $I,ahci-hd,/dev/zvol/$ds "
-			  echo "Adding disk $ds"
+			  echo "Adding disk (zvol) $ds"
+			  I=$((I+1))
+			done
+         
+         # Add file-based disks
+			for ds in ${VM_DISK_FILES}
+			do
+			  FINAL_PCI=$FINAL_PCI" -s $I,ahci-hd,$ds "
+			  echo "Adding disk (file) $ds"
 			  I=$((I+1))
 			done
          
@@ -637,6 +645,9 @@ vml_create () {
 # CDROM
 	VM_CDROM="0"
 	VM_CDROM_MEDIA=""
+
+# File-based Disk(s)
+	VM_DISK_FILES=""
 
 # Networking
 # 	( Up to 12 nics are possible following the same naming convention )
