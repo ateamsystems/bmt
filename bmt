@@ -11,6 +11,11 @@ VM_LIVES="/usr/local/vms"
 # Base zpath hack
 BASE_ZPATH="zroot/vms"
 
+# Load config file if present
+if [ -r "/usr/local/etc/bmt.conf" ]; then
+	. /usr/local/etc/bmt.conf;
+fi
+
 vml_start () {
 		# Screen
 		if [ "$IN_SCREEN" != "YES" ]; then
@@ -685,7 +690,8 @@ VM_QUIRK="0"
 }
 
 vml_setup () {
-	zfs create -o compression=lz4 -o mountpoint=/usr/local/vms/ zroot/vms
+	mkdir -p ${VM_LIVES} && 
+	zfs create -o compression=lz4 -o mountpoint=${VM_LIVES} ${BASE_ZPATH}
 }
 
 vml_quirk_to_text () {
