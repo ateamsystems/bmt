@@ -18,9 +18,15 @@ fi
 
 vml_start () {
 		# Screen
-		if [ "$IN_SCREEN" != "YES" ]; then
-			`/usr/local/bin/screen -dmS bhyve."$VM_NAME" "$SCRIPT" start $VM_NAME is &`
-			exit
+		if [ "$IN_SCREEN" != "YES" -a -z "${BMT_DEBUG}" ]; then
+			if [ -z "${BMT_DEBUG}" ]; then
+				`/usr/local/bin/screen -dmS bhyve."$VM_NAME" "$SCRIPT" start $VM_NAME is &`
+				exit;
+			else
+				echo "Debugging mode enabled, not launching in screen";
+				`"$SCRIPT" start $VM_NAME is &`;
+				exit;
+			fi
 		fi
 		
 		# Reboot loop
@@ -685,8 +691,7 @@ vml_create () {
 #	* 7 OpenBSD5.8
 #	* 8 Windows 10
 VM_QUIRK="0"
-
-	' > "$VM_LIVES/$VM_NAME/vm.conf"
+' > "$VM_LIVES/$VM_NAME/vm.conf"
 }
 
 vml_setup () {
