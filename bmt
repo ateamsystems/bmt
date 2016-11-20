@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.08"
+VERSION="0.1.09"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -290,9 +290,14 @@ vml_status(){
 
 }
 
+find_all_configs () {
+	LIST=`find $VM_LIVES | grep "/vm.conf$"`;
+	echo "${LIST}";
+}
+
 vml_check () {
 	# Check to make sure there are no sourcing errors and no duplicate TAP devices
-	out=`find $VM_LIVES | grep /vm.conf`
+	out=`find_all_configs`;
 	USED_TAPS="";
 	RET="0";
 
@@ -336,7 +341,7 @@ vml_list () {
 		echo "";
 	fi
 
-	out=`find $VM_LIVES | grep /vm.conf`
+	out=`find_all_configs`;
 	COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
    
 	printf "${COL_FORMAT}" "Machine" "Type" "State" "CPUs" "Memory" "Onboot";
@@ -402,7 +407,7 @@ echo "bhyve management tool"
 #	sysctl net.link.tap.up_on_open=1
 
 	# Virtual Machines
-	out="`find $VM_LIVES | grep vm.conf`"
+	out=`find_all_configs`;
 	printf " * starting vms: \n"
 	for vm in $out; do
 		. $vm 
@@ -428,7 +433,7 @@ vml_wait_for_poweroff(){
 
 vml_rcstop() {
 	printf "bmt stopping all running vms: \n"
-	out=`find $VM_LIVES | grep vm.conf`
+	out=`find_all_configs`;
 
 	# Quick stop loop
         for vm in $out; do
