@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.11"
+VERSION="0.1.12"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -396,7 +396,7 @@ vml_list () {
 	out=`find_all_configs`;
 	COL_FORMAT="%-20s %-13s %-7s %-5s %4s %7s %7s %11s\n";
    
-	printf "${COL_FORMAT}" "Machine" "Type" "State" "Boot" "CPUs" "RAM" "Use" "Res";
+	printf "${COL_FORMAT}" "Guest Name" "OS" "State" "Boot" "CPUs" "RAM" "Use" "Res";
 	printf -- "---------------------------------------------------------------------------------- -\n";
 
 	TOTAL_USED_CPU="0";
@@ -407,30 +407,41 @@ vml_list () {
 		. $vm
 		TYPE=$( vml_quirk_to_text )
 		vml_stat
+
 		if [ "$?" == "1" ]; then
-			STATE="UP"
+			STATE="On"
 		else
-			STATE="DOWN"
+			STATE="Off"
 		fi
 
-		if [ "${STATE}" == "UP" ]; then
+		if [ "${STATE}" == "On" ]; then
 			USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
-			USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
-			USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
+			if [ `id -u` -eq "0" ]; then
+				USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
+				USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
+				TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
+			else
+				USED_MEM="--";
+			fi
 		else
 			USED_CPU="0";
 			USED_MEM="0";
 		fi
 
+		if [ "${VM_ONBOOT}" == "YES" ]; then
+			NICE_VM_ONBOOT="Auto";
+		else
+			NICE_VM_ONBOOT="Manual";
+		fi
+
 		VM_MEMORY=$(( ${VM_MEMORY} * 1024 * 1024 ));
 
 		TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
-		TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
 		TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
 
 		VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
       
-		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "$VM_ONBOOT" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
+		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "${NICE_VM_ONBOOT}" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
 	done 
 
 	NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
