@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.09"
+VERSION="0.1.10"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -291,7 +291,7 @@ vml_status(){
 }
 
 find_all_configs () {
-	LIST=`find $VM_LIVES | grep "/vm.conf$"`;
+	LIST=`find $VM_LIVES | grep "/vm.conf$" | sort -V -t . -k 2 -k 1`;
 	echo "${LIST}";
 }
 
