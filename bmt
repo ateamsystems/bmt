@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.05"
+VERSION="0.1.07"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -288,8 +288,52 @@ vml_status(){
 
 }
 
+vml_check () {
+	# Check to make sure there are no sourcing errors and no duplicate TAP devices
+	out=`find $VM_LIVES | grep /vm.conf`
+	USED_TAPS="";
+	RET="0";
+
+	for vm in $out; do
+		if ! sh $vm; then
+			echo "${VM_NAME}: Syntax error in '${vm}'!";
+			RET="1";
+		else
+			. $vm;
+			for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+				PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+				BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
+				PREFIX_TAP="VM_N${j}_TAP_NUM"
+				TAP=`eval echo "\$""$PREFIX_TAP"`
+				
+				if [ "$TAP" != "" ]; then
+					#echo "$vm - $TAP";
+					USE_CHECK=`echo "${USED_TAPS}" | tr " " "\n" | grep "^${TAP}:"`;
+					if [ -n "${USE_CHECK}" ]; then
+						DUPE_TAP_HOST=`echo ${USE_CHECK} | awk -F : '{print $2}'`;
+						echo ">> ERROR: TAP ${TAP} used by ${VM_NAME} and ${DUPE_TAP_HOST}";
+						RET="1";
+					else
+						USED_TAPS="${USED_TAPS} ${TAP}:${VM_NAME}";
+					fi
+				fi
+			done
+		fi
+	done
+
+	#echo "Used taps: ${USED_TAPS}";
+	return ${RET};
+}
+
 
 vml_list () {
+	if ! vml_check > /dev/null 2> /dev/null; then
+		echo "";
+		echo ">> ERROR: Configuration errors found:";
+		vml_check;
+		echo "";
+	fi
+
 	out=`find $VM_LIVES | grep /vm.conf`
 	COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
    
@@ -574,6 +618,7 @@ vml_usage (){
 	echo "
 USAGE:
 bmt attach [vm_name]
+bmt check
 bmt create [vm name] [-V VOLSIZE[K,M,G,T ETC]
 bmt clone [vm name] [new vm name]
 bmt destroy [vm_name]
@@ -848,6 +893,12 @@ SCRIPT=$(readlink -f "$0")
 			ROOT_REQUIRED="YES"
 		;;
 
+		check)
+			BONUS_REQUIRED="NO"
+			VM_REQUIRED="NO"
+			ROOT_REQUIRED="NO"
+		;;
+
 		list)
 			BONUS_REQUIRED="NO"
 			VM_REQUIRED="NO"
@@ -897,7 +948,7 @@ SCRIPT=$(readlink -f "$0")
 			ROOT_REQUIRED="YES"
 			if [ "${4}" == "" ]; then
 				echo "Value argument not set."
-				exit
+				exit 1;
 			else
 				ARG_VAL=${4}
 			fi
@@ -947,7 +998,7 @@ SCRIPT=$(readlink -f "$0")
 		*)
 			echo "$ARG_ACTION is an invalid action"
 			vml_usage
-			exit
+			exit 1;
 		;;
 	esac	
 
@@ -955,7 +1006,7 @@ SCRIPT=$(readlink -f "$0")
 if [ "${ROOT_REQUIRED}" == "YES" ]; then
 	if [ "`whoami | tr -d \"\\n\"`" != "root" ]; then
 		echo "The $ARG_ACTION action requires root"
-		exit
+		exit 1;
 	fi
 fi
 		
@@ -965,7 +1016,7 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
 
 	if [ "$VM_NAME" == "" ]; then
 		echo "No vm name provided"
-		exit
+		exit 1;
 	fi
 
 	vml_require_exist
@@ -1003,7 +1054,7 @@ if [ "$BONUS_REQUIRED" == "YES" ]; then
 		ARG_BONUS="$3"
 	else
 		echo "Not enough arguments"
-		exit
+		exit 1;
 	fi
 fi
 
@@ -1021,3 +1072,6 @@ fi
 
 
 vml_$ARG_ACTION
+RET_VAL=$?
+
+exit ${RET_VAL}
