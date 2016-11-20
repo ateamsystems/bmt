@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.07"
+VERSION="0.1.08"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -235,6 +235,8 @@ vml_start () {
 				break
 			else
 				echo "VM Reboot detected, looping"
+				# -- Re-read the config file in case it's changed
+				. "${VM_ROOT}/vm.conf";
 			fi
 
 		done
