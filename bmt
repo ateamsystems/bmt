@@ -3,7 +3,7 @@
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.10"
+VERSION="0.1.11"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -333,6 +333,58 @@ vml_check () {
 }
 
 
+NiceSize ()
+{
+	SIZE="$1";     # Value (in bytes)
+	SCALE="$2";    # Decimal places (default is 1)
+	UNIT="$3";     # Unit (default is auto-detect)
+
+	# ---- Set default decimal places
+	#
+	if [ -z "${SCALE}" ]; then
+		SCALE=1;
+	fi
+
+	# ---- Set default unit
+	#
+	if [ -z "${UNIT}" ]; then
+		if [ "${SIZE}" -gt 1125899906842624 ]; then
+			UNIT="PiB";
+		elif [ "${SIZE}" -gt 1099511627776 ]; then
+			UNIT="TiB";
+		elif [ "${SIZE}" -gt 1073740800 ]; then
+			UNIT="GiB";
+		elif [ "${SIZE}" -gt 1048576 ]; then
+			UNIT="MiB";
+		elif [ "${SIZE}" -gt 1024 ]; then
+			UNIT="KiB";
+		else
+			UNIT="byte";
+		fi
+	fi
+
+	# ---- Convert to unit
+	#
+	if [ "${UNIT}" == "PiB" ]; then
+		NICE_SIZE=`echo "scale=${SCALE}; ${SIZE}/1125899906842624" | bc`;
+	elif [ "${UNIT}" == "TiB" ]; then
+		NICE_SIZE=`echo "scale=${SCALE}; ${SIZE}/1099511627776" | bc`;
+	elif [ "${UNIT}" == "GiB" ]; then
+		NICE_SIZE=`echo "scale=${SCALE}; ${SIZE}/1073741824" | bc`;
+	elif [ "${UNIT}" == "MiB" ]; then
+		NICE_SIZE=`echo "scale=${SCALE}; ${SIZE}/1048576" | bc`;
+	elif [ "${UNIT}" == "KiB" ]; then
+		NICE_SIZE=`echo "scale=${SCALE}; ${SIZE}/1024" | bc`;
+	elif [ "${UNIT}" == "byte" ]; then
+		NICE_SIZE="${SIZE}";
+	else
+		NICE_SIZE="NiceSize: unknown unit \"${UNIT}\"";
+	fi
+
+	NICE_SIZE=`echo ${NICE_SIZE} | rev | sed 's/\([0-9][0-9][0-9]\)\([0-9]\)/\1,\2/g' | rev`;
+	echo "${NICE_SIZE} ${UNIT}";
+}
+
 vml_list () {
 	if ! vml_check > /dev/null 2> /dev/null; then
 		echo "";
@@ -342,22 +394,50 @@ vml_list () {
 	fi
 
 	out=`find_all_configs`;
-	COL_FORMAT="%-22s %-13s %-7s %-5s %-7s %-4s\n";
+	COL_FORMAT="%-20s %-13s %-7s %-5s %4s %7s %7s %11s\n";
    
-	printf "${COL_FORMAT}" "Machine" "Type" "State" "CPUs" "Memory" "Onboot";
+	printf "${COL_FORMAT}" "Machine" "Type" "State" "Boot" "CPUs" "RAM" "Use" "Res";
+	printf -- "---------------------------------------------------------------------------------- -\n";
+
+	TOTAL_USED_CPU="0";
+	TOTAL_USED_MEM="0";
+	TOTAL_VM_MEMORY="0";
    
 	for vm in $out; do
 		. $vm
 		TYPE=$( vml_quirk_to_text )
 		vml_stat
 		if [ "$?" == "1" ]; then
-			STATE="UP  "
+			STATE="UP"
 		else
 			STATE="DOWN"
 		fi
+
+		if [ "${STATE}" == "UP" ]; then
+			USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
+			USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
+			USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
+		else
+			USED_CPU="0";
+			USED_MEM="0";
+		fi
+
+		VM_MEMORY=$(( ${VM_MEMORY} * 1024 * 1024 ));
+
+		TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
+		TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
+		TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
+
+		VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
       
-		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "$VM_CPUS" "$VM_MEMORY" "$VM_ONBOOT";
-	done
+		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "$VM_ONBOOT" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
+	done 
+
+	NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
+	NICE_TOTAL_VM_MEMORY=`NiceSize ${TOTAL_VM_MEMORY} 0`; 
+
+	printf -- "---------------------------------------------------------------------------------- -\n";
+	printf "${COL_FORMAT}" "" "" "" "" "" "${NICE_TOTAL_VM_MEMORY}" "${TOTAL_USED_CPU}%" "${NICE_TOTAL_USED_MEM}";
 }
 
 quick_padding () {
