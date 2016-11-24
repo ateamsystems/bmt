@@ -394,7 +394,7 @@ vml_list () {
 	fi
 
 	out=`find_all_configs`;
-	COL_FORMAT="%-20s %-13s %-7s %-5s %4s %7s %7s %11s\n";
+	COL_FORMAT="%-20s %-13s %-7s %-6s %4s %7s %7s %11s\n";
    
 	printf "${COL_FORMAT}" "Guest Name" "OS" "State" "Boot" "CPUs" "RAM" "Use" "Res";
 	printf -- "---------------------------------------------------------------------------------- -\n";
@@ -418,6 +418,9 @@ vml_list () {
 			USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
 			if [ `id -u` -eq "0" ]; then
 				USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
+				if [ -z "${USED_MEM_RAW}" ]; then
+					USED_MEM_RAW="0";
+				fi
 				USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
 				TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
 			else
@@ -425,7 +428,7 @@ vml_list () {
 			fi
 		else
 			USED_CPU="0";
-			USED_MEM="0";
+			USED_MEM="--";
 		fi
 
 		if [ "${VM_ONBOOT}" == "YES" ]; then
