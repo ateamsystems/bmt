@@ -1,9 +1,10 @@
 #!/bin/sh
+#!/bin/sh
 # Bhyve Management Script 
 # Steven Douglas
 
 # Script Version
-VERSION="0.1.12"
+VERSION="0.1.13"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -80,22 +81,22 @@ vml_start () {
 			  echo "Adding disk (zvol) $ds"
 			  I=$((I+1))
 			done
-         
-         # Add file-based disks
+			
+			# Add file-based disks
 			for ds in ${VM_DISK_FILES}
 			do
 			  FINAL_PCI=$FINAL_PCI" -s $I,ahci-hd,$ds "
 			  echo "Adding disk (file) $ds"
 			  I=$((I+1))
 			done
-         
-         # Add Framebuffer
+			
+			# Add Framebuffer
 			if [ "$VM_FRAMEBUFFER" == "1" ] ; then
 				FINAL_PCI=$FINAL_PCI" -s $I,fbuf,$VM_FRAMEBUFFER_OPTS "
 				I=$((I+1))
 			fi
-         
-         # Add USB 3.0
+			
+			# Add USB 3.0
 			if [ "$VM_USB3" == "1" ] ; then
 				FINAL_PCI=$FINAL_PCI" -s $I,xhci,tablet "
 				I=$((I+1))
@@ -215,9 +216,8 @@ vml_start () {
 
 			# Quirk Windows10
 			elif [ "$VM_QUIRK" == "8" ]; then
-            #echo "Windows 10 ... nothing to do :P"
-            USE_BOOTROM="-l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd";
-
+				#echo "Windows 10 ... nothing to do :P"
+				USE_BOOTROM="-l bootrom,/usr/local/share/uefi-firmware/BHYVE_UEFI.fd";
 			else
 				echo "VM_QUIRK NOT SET"
 			fi
@@ -288,6 +288,13 @@ vml_status(){
 		echo "VM is not running"
 	fi
 
+}
+
+fatal_error() {
+	MESSAGE="${1}";
+	echo " >>> ERROR: ${MESSAGE}";
+	echo " >>> Exiting.";
+	exit 1;
 }
 
 find_all_configs () {
@@ -395,14 +402,14 @@ vml_list () {
 
 	out=`find_all_configs`;
 	COL_FORMAT="%-20s %-13s %-7s %-6s %4s %7s %7s %11s\n";
-   
+	
 	printf "${COL_FORMAT}" "Guest Name" "OS" "State" "Boot" "CPUs" "RAM" "Use" "Res";
 	printf -- "---------------------------------------------------------------------------------- -\n";
 
 	TOTAL_USED_CPU="0";
 	TOTAL_USED_MEM="0";
 	TOTAL_VM_MEMORY="0";
-   
+	
 	for vm in $out; do
 		. $vm
 		TYPE=$( vml_quirk_to_text )
@@ -443,7 +450,7 @@ vml_list () {
 		TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
 
 		VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
-      
+	   
 		printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "${NICE_VM_ONBOOT}" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
 	done 
 
@@ -530,13 +537,13 @@ vml_rcstop() {
 	out=`find_all_configs`;
 
 	# Quick stop loop
-        for vm in $out; do
-		. $vm
+		for vm in $out; do
+			. $vm
 		vml_stop -q 
 	done
 
 	# Wait for things to actually stop
-        for vm in $out; do
+	for vm in $out; do
 		. $vm
 		printf "     * ${VM_NAME}"
 		while true; do
@@ -777,16 +784,26 @@ vml_set (){
 }
 vml_create () {
 	# Syntax
-	# bmt create [ vm ] [ bonus ( volume size) ]	
+	# bmt create [ vm ] [ bonus ( volume size) 
+	ZVOL_SIZE="10G";
 
-	if [ "$ARG_BONUS" == "" ]; then
-		ZVOL_SIZE="10G"
-	else
-		ZVOL_SIZE=$ARG_BONUS
+	if [ "${ARG_BONUS}"x == "-V"x ]; then
+		if [ -n "${ARG_BONUS2}" ]; then
+			ZVOL_SIZE="${ARG_BONUS2}";
+		else
+			fatal_error "Missing flag param: 'create -V <volsize>'";
+		fi
 	fi
+	
 	ZPATH=`zfs list -o name,mountpoint | grep $VM_LIVES | head -n 1 | cut -d " " -f1`
-	zfs create "$ZPATH/$VM_NAME"
-	zfs create -V "$ZVOL_SIZE" -o refreservation=none "$ZPATH/$VM_NAME/disk"
+	
+	if ! zfs create "$ZPATH/$VM_NAME"; then
+		fatal_error "Couldn't create zvol '$ZPATH/$VM_NAME'";
+   fi
+	if ! zfs create -V "$ZVOL_SIZE" -o refreservation=none "$ZPATH/$VM_NAME/disk"; then
+		fatal_error "Couldn't create zvol '$ZPATH/$VM_NAME/disk'";
+	fi
+   
 	echo "#!/bin/sh
 
 # VM SETTINGS
@@ -822,7 +839,7 @@ vml_create () {
 
 # USB 3.0
 #
-        VM_USB3="0"
+	VM_USB3="0"
 
 # Linux quirk code linux is unpredictable. Assign the quirk code according
 # to what you need to run.
@@ -836,8 +853,8 @@ vml_create () {
 #	* 6 NetBSD
 #	* 7 OpenBSD5.8
 #	* 8 Windows 10
-VM_QUIRK="0"
-' > "$VM_LIVES/$VM_NAME/vm.conf"
+VM_QUIRK="0"' > "$VM_LIVES/$VM_NAME/vm.conf"
+	echo "VM '${VM_NAME}' created";
 }
 
 vml_setup () {
@@ -848,15 +865,15 @@ vml_setup () {
 vml_quirk_to_text () {
 
 	case $VM_QUIRK in
-		0) VM="FreeBSD      ";;
-		1) VM="CentOS 6.X   ";;
-		2) VM="Centos 7     ";;
-		3) VM="Ubuntu       ";;
-		5) VM="Arch         ";;
-		6) VM="NetBSD       ";;
-		7) VM="OpenBSD      ";;
-		8) VM="Windows 10   ";;
-		*) VM="UNKNOWN      ";;
+		0) VM="FreeBSD";;
+		1) VM="CentOS 6";;
+		2) VM="Centos 7";;
+		3) VM="Ubuntu";;
+		5) VM="Arch";;
+		6) VM="NetBSD";;
+		7) VM="OpenBSD";;
+		8) VM="Windows 10";;
+		*) VM="UNKNOWN";;
 	esac
 	echo "${VM}"
 
@@ -1127,13 +1144,11 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
 	VM_ROOT="${VM_LIVES}/${VM_NAME}"
 
 	if ! [ -d "${VM_ROOT}" ]; then
-	   echo " >>> ERROR: Invalid VM_ROOT \"${VM_ROOT}\"";
-	   exit 1;
+		fatal_error "Invalid VM_ROOT \"${VM_ROOT}\"";
 	fi
 
 	if ! [ -r "${VM_ROOT}/vm.conf" ]; then
-	   echo " >>> ERROR: vm.conf missing from ${VM_ROOT}";
-	   exit 1;
+		fatal_error "vm.conf missing from ${VM_ROOT}";
 	fi
 
 	. "${VM_ROOT}/vm.conf"
@@ -1149,14 +1164,16 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
 fi
 
 # Deal with bonus $3
-if [ "$BONUS_REQUIRED" == "YES" ]; then
+if [ -n "$3" ]; then
+	ARG_BONUS="$3"
+fi
+if [ -n "$4" ]; then
+	ARG_BONUS2="$4"
+fi
 
-	if [ "$3" != "" ]; then
-		ARG_BONUS="$3"
-	else
-		echo "Not enough arguments"
-		exit 1;
-	fi
+if [ "$BONUS_REQUIRED" == "YES" -a -z "${ARG_BONUS}" ]; then
+	echo "Not enough arguments"
+	exit 1;
 fi
 
 # Early escape if we are listing
