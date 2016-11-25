@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.15"
+VERSION="0.1.16"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -725,27 +725,30 @@ vml_receive () {
    
 }
 
+vml_help () {
+   vml_usage
+}
+
 vml_usage (){
    echo "
 USAGE:
-bmt attach [vm_name]
+bmt attach <vm_name>
 bmt check
-bmt create [vm name] [-V VOLSIZE[K,M,G,T ETC]
-bmt clone [vm name] [new vm name]
-bmt destroy [vm_name]
-bmt edit [vm_name]
+bmt create <vm name> [ -V VOLSIZE[K,M,G,T etc ]
+bmt clone <vm name> <new vm name>
+bmt destroy <vm_name>
+bmt edit <vm_name>
 bmt list 
 bmt rcstart
 bmt rcstop
-bmt receive [new_vm_name] 
-bmt rename [current vm name] [new vm name]
-bmt send [vm_name] 
-bmt start [vm_name]
-bmt status [vm_name]
-bmt stop [vm_name] [-f]
-
-
-"
+bmt get <vm name> <CONFIG_VAR>
+bmt set <vm name> <CONFIG_VAR> <new value>
+bmt receive [new_vm_name]
+bmt rename <current vm name> <new vm name>
+bmt send <vm_name>
+bmt start <vm_name>
+bmt status <vm_name>
+bmt stop <vm_name> [ -f ]"
 }
 
 vml_get() {
@@ -969,11 +972,18 @@ SCRIPT=$(readlink -f "$0")
    ARG_ACTION="$1"
    if [ "$ARG_ACTION" == "" ]; then
       echo "Argument action not provided"
+      vml_usage
       exit
    fi
 
    # Make sure a valid action is provided
    case $ARG_ACTION in
+      help)
+         BONUS_REQUIRED="NO"
+         VM_REQUIRED="NO"
+         ROOT_REQUIRED="NO"
+      ;;
+      
       attach)
          BONUS_REQUIRED="NO"
          VM_REQUIRED="YES"
