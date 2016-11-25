@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.14"
+VERSION="0.1.15"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -809,53 +809,56 @@ vml_create () {
    
    echo "#!/bin/sh
 
-# VM SETTINGS
-   VM_NAME=\"$VM_NAME\""'
-   VM_CPUS="1"
-   VM_MEMORY="1024"
-   VM_ONBOOT="YES"
-   VM_BOOT_ZVOL="disk"
-   VM_BOOT_PART="1"
-   VM_PRE_CMD=""
-   VM_POST_CMD=""
-
-# CDROM
-   VM_CDROM="0"
-   VM_CDROM_MEDIA=""
-
-# File-based Disk(s)
-   VM_DISK_FILES=""
-
-# Networking
-#  ( Up to 12 nics are possible following the same naming convention )
-   AUTO_NETWORKING="YES"
-   VM_N1_BRIDGE_NUM=""
-   VM_N1_TAP_NUM=""
-
-   VM_N2_BRIDGE_NUM=""
-   VM_N2_TAP_NUM=""
-
-# Framebuffer
+# -- VM Basics
 #
-   VM_FRAMEBUFFER="0"
-   VM_FRAMEBUFFER_OPTS="tcp=0.0.0.0:5900,wait"
+VM_NAME=\"$VM_NAME\""'
+VM_CPUS="1"
+VM_MEMORY="1024"
+VM_ONBOOT="YES"
+VM_BOOT_ZVOL="disk"
+VM_BOOT_PART="1"
+VM_PRE_CMD=""
+VM_POST_CMD=""
 
-# USB 3.0
+# -- CD/DVD Media
 #
-   VM_USB3="0"
+VM_CDROM="0"
+VM_CDROM_MEDIA=""
 
-# Linux quirk code linux is unpredictable. Assign the quirk code according
-# to what you need to run.
+# -- File-based Disk(s)
 #
-#  * 0 FreeBSD
-#  * 1 CentOS 6.x
-#  * 2 CentOS 7.x
-#  * 3 Ubuntu 15.04
-#  * 4 Fedora 23
-#  * 5 Arch
-#  * 6 NetBSD
-#  * 7 OpenBSD5.8
-#  * 8 Windows 10
+VM_DISK_FILES=""
+
+# -- Networking
+#  ( Up to 12 NIC are possible following the same naming convention )
+#
+AUTO_NETWORKING="YES"
+VM_N1_BRIDGE_NUM=""
+VM_N1_TAP_NUM=""
+
+VM_N2_BRIDGE_NUM=""
+VM_N2_TAP_NUM=""
+
+# -- Framebuffer
+#
+VM_FRAMEBUFFER="0"
+VM_FRAMEBUFFER_OPTS="tcp=0.0.0.0:5900,wait"
+
+# -- USB 3.0
+#
+VM_USB3="0"
+
+# -- OS Type 
+#  0 FreeBSD
+#  1 CentOS 6.x
+#  2 CentOS 7.x
+#  3 Ubuntu 15.04
+#  4 Fedora 23
+#  5 Arch
+#  6 NetBSD
+#  7 OpenBSD 5.8
+#  8 Windows 10
+#
 VM_QUIRK="0"' > "$VM_LIVES/$VM_NAME/vm.conf"
    echo "VM '${VM_NAME}' created";
 }
