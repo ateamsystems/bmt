@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.19"
+VERSION="0.1.20"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -352,6 +352,35 @@ find_all_bridges () {
    echo "${LIST}";
 }
 
+clear_vm_vars () {
+   # -- Clears variables that vm.conf uses (ie; to avoid looping isses)
+   VM_NAME=""
+   VM_QUIRK=""
+   VM_CPUS=""
+   VM_MEMORY=""
+   VM_ONBOOT=""
+   VM_PRE_CMD=""
+   VM_POST_CMD=""
+   VM_BOOT_ZVOL=""
+   VM_BOOT_PART="1"
+   VM_DISK_FILES=""
+   VM_GRUB_DIR=""
+   VM_CDROM=""
+   VM_CDROM_MEDIA=""
+   AUTO_NETWORKING=""
+   VM_FRAMEBUFFER=""
+   VM_FRAMEBUFFER_OPTS=""
+   VM_USB3=""
+
+   for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+      eval $PREFIX_BRIDGE='';
+      
+      PREFIX_TAP="VM_N${j}_TAP_NUM"
+      eval $PREFIX_TAP=''
+   done
+}
+
 vml_check () {
    # Check to make sure there are no sourcing errors and no duplicate TAP devices
    out=`find_all_configs`;
@@ -363,6 +392,10 @@ vml_check () {
          echo "${VM_NAME}: Syntax error in '${vm}'!";
          RET="1";
       else
+         # -- Clear vars
+         clear_vm_vars;
+         
+         # -- Now load VM config
          . $vm;
          for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
             PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
@@ -455,6 +488,8 @@ vml_get_tap_to_vm_map () {
    # -- Loop through each VM, returning a sorted list of tapN:vmnames values
    RET=""
    for vm in $out; do
+      clear_vm_vars;
+      
       . $vm;
       for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
          PREFIX_TAP="VM_N${j}_TAP_NUM"
@@ -559,10 +594,16 @@ vml_netmap () {
          for CUR_DEV in $members; do
             CUR_VM_NAME=`vml_get_tap_vm "${CUR_DEV}" "${TAP_MAP}"`;
             
+            # -- See if dmesg has dev info
+            if [ -z "${CUR_VM_NAME}" ]; then
+               CUR_VM_NAME=`grep "^${CUR_DEV}: " /var/run/dmesg.boot | awk -F '<' '{print $2}' | awk -F '>' '{print $1}' | grep -v "^$" | head -n 1`;
+            fi
+            
+            # -- Display
             if [ -n "${CUR_VM_NAME}" ]; then
-               echo "  +-- ${CUR_DEV}: ${CUR_VM_NAME}";
+               printf "  +-- %5s -> %s\n" "${CUR_DEV}" "${CUR_VM_NAME}";
             else
-               echo "  +-- ${CUR_DEV}";
+               printf "  +-- %5s\n" "${CUR_DEV}";
             fi
          done
          
