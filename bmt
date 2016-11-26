@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.17"
+VERSION="0.1.18"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -337,6 +337,11 @@ find_all_configs () {
    echo "${LIST}";
 }
 
+find_all_bridges () {
+   LIST=`ifconfig -a | grep bridge[0-9+]: | awk -F : '{print $1}'`;
+   echo "${LIST}";
+}
+
 vml_check () {
    # Check to make sure there are no sourcing errors and no duplicate TAP devices
    out=`find_all_configs`;
@@ -374,6 +379,14 @@ vml_check () {
    return ${RET};
 }
 
+vml_check_cond_show () {
+   if ! vml_check > /dev/null 2> /dev/null; then
+      echo "";
+      echo ">> ERROR: Configuration errors found:";
+      vml_check;
+      echo "";
+   fi
+}
 
 NiceSize ()
 {
@@ -427,13 +440,93 @@ NiceSize ()
    echo "${NICE_SIZE} ${UNIT}";
 }
 
-vml_list () {
-   if ! vml_check > /dev/null 2> /dev/null; then
-      echo "";
-      echo ">> ERROR: Configuration errors found:";
-      vml_check;
-      echo "";
+vml_get_tap_map () {
+   # -- Loop through each VM, returning a sorted list of tapN:vmnames values
+   RET=""
+   for vm in $out; do
+      . $vm;
+      for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+         PREFIX_TAP="VM_N${j}_TAP_NUM"
+         TAP=`eval echo "\$""$PREFIX_TAP"`
+         
+         if [ -n "$TAP" ]; then
+            USE_CHECK=`echo ${members} | tr " " "\n" | grep "tap${TAP}"`;
+            if [ -n "${USE_CHECK}" ]; then
+               RET="${RET} tap${TAP}:${VM_NAME}"
+            fi
+         fi
+      done
+   done
+   
+   echo "${RET}" | tr " " "\n" | sort -u
+}
+
+vml_get_tap_vm () {
+   TAP_TO_FIND="$1";
+   TAP_MAP="$2";
+   
+   if [ -z ${TAP_MAP} ]; then
+      TAP_MAP=`vml_get_tap_map`;
    fi
+   
+   RET=`echo "${TAP_MAP}" | tr " " "\n" | grep "^${TAP_TO_FIND}:" | awk -F : '{print $2}'`;
+   
+   echo "${RET}";
+   }
+
+vml_netmap () {
+   vml_check_cond_show;
+   
+   out=`find_all_configs`;
+   bridges=`find_all_bridges`;
+   
+   echo "Bridge To VM NIC Mappings";
+   echo "";
+
+   TAP_MAP=`vml_get_tap_map`;
+   
+   # -- Loop through each bridge
+   for bridge in $bridges; do
+      members=`ifconfig $bridge | grep "member: " | awk '{print $2}' | sort -u`;
+      
+      if [ -n "${members}" ]; then
+         echo -n "${bridge}";
+         
+         BRIDGE_NAME_VAR="BRIDGE_${bridge}_NAME"
+         BRIDGE_NAME=`eval echo "\$""$BRIDGE_NAME_VAR"`
+         if [ -n "${BRIDGE_NAME}" ]; then
+            echo " - ${BRIDGE_NAME}";
+         else
+            echo "";
+         fi
+         
+         echo "  |";
+         
+         # -- loop through taps
+         for CUR_DEV in $members; do
+            CUR_VM_NAME=`vml_get_tap_vm "${CUR_DEV}" "${TAP_MAP}"`;
+            
+            if [ -n "${CUR_VM_NAME}" ]; then
+               echo "  +-- ${CUR_DEV}: ${CUR_VM_NAME}";
+            else
+               echo "  +-- ${CUR_DEV}";
+            fi
+         done
+         
+         echo "";
+      else
+         echo " ${bridge} - ";
+         echo "";
+      fi
+   done
+
+   #echo "Used taps: ${USED_TAPS}";
+   return ${RET};
+}
+
+
+vml_list () {
+   vml_check_cond_show
 
    out=`find_all_configs`;
    COL_FORMAT="%-20s %-13s %-7s %-6s %4s %7s %7s %11s\n";
@@ -775,6 +868,7 @@ bmt rcstart
 bmt rcstop
 bmt get <vm name> <CONFIG_VAR>
 bmt set <vm name> <CONFIG_VAR> <new value>
+bmt netmap
 bmt receive [new_vm_name]
 bmt rename <current vm name> <new vm name>
 bmt send <vm_name>
@@ -1065,6 +1159,12 @@ SCRIPT=$(readlink -f "$0")
       ;;
 
       check)
+         BONUS_REQUIRED="NO"
+         VM_REQUIRED="NO"
+         ROOT_REQUIRED="NO"
+      ;;
+      
+      netmap)
          BONUS_REQUIRED="NO"
          VM_REQUIRED="NO"
          ROOT_REQUIRED="NO"
