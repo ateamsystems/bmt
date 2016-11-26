@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.16"
+VERSION="0.1.17"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -128,13 +128,36 @@ vml_start () {
             else
                # Generate grub.cfg
                MOUNTPOINT="/tmp/$VM_NAME"
-               mkdir $MOUNTPOINT
-               ext4fuse /dev/zvol/$ZPATH/$VM_BOOT_ZVOL"s"$VM_BOOT_PART $MOUNTPOINT
-               VMLINUZ_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "vmlinuz*" | sed -e "s,$MOUNTPOINT,,g" | sort | tail -n 1`
-               INITRAMFS_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "initramfs*" | sed -e "s,$MOUNTPOINT,,g " | sort | tail -n 1`
-               umount "$MOUNTPOINT"
-               rmdir "$MOUNTPOINT"
+               if ! mkdir $MOUNTPOINT; then
+                  fatal_error "Couldn't create temporary mountpoint for grub.cfg generation (${MOUNTPOINT})";
+               fi
+               
+               if ! ext4fuse /dev/zvol/$ZPATH/$VM_BOOT_ZVOL"s"$VM_BOOT_PART $MOUNTPOINT; then
+                  rmdir "$MOUNTPOINT";
+                  fatal_error "Couldn't mount boot partition with fuse";
+               fi
+               
+               if ! VMLINUZ_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "vmlinuz*" | sed -e "s,$MOUNTPOINT,,g" | sort | tail -n 1`; then
+                  umount "$MOUNTPOINT"; rmdir "$MOUNTPOINT";
+                  fatal_error "Couldn't run find operation for vmlinuz file";
+               fi
+               
+               if [ -z "${VMLINUZ_PATH}" ]; then
+                  umount "$MOUNTPOINT"; rmdir "$MOUNTPOINT";
+                  fatal_error "Couldn't find vmlinuz file in guest disk /boot";
+               fi
+               
+               if ! INITRAMFS_PATH=`find "$MOUNTPOINT/boot/" \( ! -name '.*' \) -type f -name "initramfs*" | sed -e "s,$MOUNTPOINT,,g " | sort | tail -n 1`; then
+                  umount "$MOUNTPOINT"; rmdir "$MOUNTPOINT";
+                  fatal_error "Couldn't run find operation for initramfs file";
+               fi
 
+               if [ -z "${INITRAMFS_PATH}" ]; then
+                  umount "$MOUNTPOINT"; rmdir "$MOUNTPOINT";
+                  fatal_error "Couldn't find initramfs file in guest disk /boot";
+               fi
+               
+               umount "$MOUNTPOINT"; rmdir "$MOUNTPOINT";
 
                rm $SCRIPTPATH/grub.cfg
                echo "set root=($BOOT_DEVICE)" >> $SCRIPTPATH/grub.cfg
@@ -157,19 +180,28 @@ vml_start () {
                /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
-               /usr/local/sbin/grub-bhyve -d /boot/grub2 -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               if [ -z "${VM_GRUB_DIR}" ]; then
+                  VM_GRUB_DIR="/boot/grub2";
+               fi
+               /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk Ubuntu
          elif [ "$VM_QUIRK" == "3" ]; then
-            /usr/local/sbin/grub-bhyve -d /boot/grub/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+            if [ -z "${VM_GRUB_DIR}" ]; then
+               VM_GRUB_DIR="/boot/grub";
+            fi
+            /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
          # Quirk Fedora 
          elif [ "$VM_QUIRK" == "4" ]; then
             if [ "$VM_CDROM" == "1" ]; then
                /usr/local/sbin/grub-bhyve -d /isolinux/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             else
-               /usr/local/sbin/grub-bhyve -d /grub2/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               if [ -z "${VM_GRUB_DIR}" ]; then
+                  VM_GRUB_DIR="/grub2";
+               fi
+               /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk arch         
@@ -815,13 +847,20 @@ vml_create () {
 # -- VM Basics
 #
 VM_NAME=\"$VM_NAME\""'
-VM_CPUS="1"
-VM_MEMORY="1024"
-VM_ONBOOT="YES"
-VM_BOOT_ZVOL="disk"
-VM_BOOT_PART="1"
-VM_PRE_CMD=""
-VM_POST_CMD=""
+VM_QUIRK="0"         # - See OS Type list below
+VM_CPUS="1"          # - Number of virtual CPUs
+VM_MEMORY="1024"     # - Guest RAM allocation
+VM_ONBOOT="YES"      # - Start this VM when the host boots
+VM_PRE_CMD=""        # - Command to run before starting
+VM_POST_CMD=""       # - Command to run after exiting
+
+# -- Booting / Disks
+#
+VM_BOOT_ZVOL="disk"  # - The zvol sub-name to boot from
+VM_BOOT_PART="1"     # - The partition to boot from
+VM_DISK_FILES=""     # - Disk-file alternative to BOOT_ZVOLs
+VM_GRUB_DIR=""       # - Override the grub dir (ie; /grub2 for LVM)
+                     #   (normally dictated by VM_QUIRK logic)
 
 # -- CD/DVD Media
 #
@@ -830,7 +869,6 @@ VM_CDROM_MEDIA=""
 
 # -- File-based Disk(s)
 #
-VM_DISK_FILES=""
 
 # -- Networking
 #  ( Up to 12 NIC are possible following the same naming convention )
@@ -861,8 +899,7 @@ VM_USB3="0"
 #  6 NetBSD
 #  7 OpenBSD 5.8
 #  8 Windows 10
-#
-VM_QUIRK="0"' > "$VM_LIVES/$VM_NAME/vm.conf"
+#' > "$VM_LIVES/$VM_NAME/vm.conf"
    echo "VM '${VM_NAME}' created";
 }
 
