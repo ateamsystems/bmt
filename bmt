@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.18"
+VERSION="0.1.19"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -337,6 +337,16 @@ find_all_configs () {
    echo "${LIST}";
 }
 
+get_config_file_name () {
+   VM_NAME="$1";
+   
+   CONF_FILE="${VM_LIVES}/${VM_NAME}/vm.conf";
+   
+   if [ -e "${CONF_FILE}" ]; then
+      echo "${CONF_FILE}";
+   fi
+}
+
 find_all_bridges () {
    LIST=`ifconfig -a | grep bridge[0-9+]: | awk -F : '{print $1}'`;
    echo "${LIST}";
@@ -440,7 +450,8 @@ NiceSize ()
    echo "${NICE_SIZE} ${UNIT}";
 }
 
-vml_get_tap_map () {
+vml_get_tap_to_vm_map () {
+   out=`find_all_configs`;
    # -- Loop through each VM, returning a sorted list of tapN:vmnames values
    RET=""
    for vm in $out; do
@@ -466,13 +477,56 @@ vml_get_tap_vm () {
    TAP_MAP="$2";
    
    if [ -z ${TAP_MAP} ]; then
-      TAP_MAP=`vml_get_tap_map`;
+      TAP_MAP=`vml_get_tap_to_vm_map`;
    fi
    
    RET=`echo "${TAP_MAP}" | tr " " "\n" | grep "^${TAP_TO_FIND}:" | awk -F : '{print $2}'`;
    
    echo "${RET}";
-   }
+}
+
+vml_get_tap_to_bridge_map() {
+   # -- Loop through each bridge and then VM, returning a sorted list of dev:bridgeN values
+   out=`find_all_configs`;
+   bridges=`find_all_bridges`;
+   
+   RET="";
+   
+   # -- Loop through each bridge
+   for bridge in $bridges; do
+      members=`ifconfig $bridge | grep "member: " | awk '{print $2}' | sort -u`;
+      
+      if [ -n "${members}" ]; then
+         # -- loop through taps
+         for CUR_DEV in $members; do
+            RET="${RET} ${CUR_DEV}:${bridge}"
+         done
+      fi
+   done
+
+   echo "${RET}";
+}
+
+vml_get_tap_bridge () {
+   TAP_TO_FIND="$1";
+   TAP_MAP="$2";
+   
+   if [ -z ${TAP_MAP} ]; then
+      TAP_MAP=`vml_get_tap_to_bridge_map`;
+   fi
+   
+   RET=`echo "${TAP_MAP}" | tr " " "\n" | grep "^${TAP_TO_FIND}:" | awk -F : '{print $2}'`;
+   
+   echo "${RET}";
+}
+   
+vml_get_bridge_name () {
+   bridge="$1";
+   BRIDGE_NAME_VAR="BRIDGE_${bridge}_NAME";
+   BRIDGE_NAME=`eval echo "\$""$BRIDGE_NAME_VAR"`;
+   
+   echo "${BRIDGE_NAME}"
+}
 
 vml_netmap () {
    vml_check_cond_show;
@@ -483,7 +537,7 @@ vml_netmap () {
    echo "Bridge To VM NIC Mappings";
    echo "";
 
-   TAP_MAP=`vml_get_tap_map`;
+   TAP_MAP=`vml_get_tap_to_vm_map`;
    
    # -- Loop through each bridge
    for bridge in $bridges; do
@@ -492,8 +546,7 @@ vml_netmap () {
       if [ -n "${members}" ]; then
          echo -n "${bridge}";
          
-         BRIDGE_NAME_VAR="BRIDGE_${bridge}_NAME"
-         BRIDGE_NAME=`eval echo "\$""$BRIDGE_NAME_VAR"`
+         BRIDGE_NAME=`vml_get_bridge_name ${bridge}`;
          if [ -n "${BRIDGE_NAME}" ]; then
             echo " - ${BRIDGE_NAME}";
          else
@@ -524,6 +577,82 @@ vml_netmap () {
    return ${RET};
 }
 
+get_zpath () {
+   zfs list -o name,mountpoint | sed -e s:"//":"/":g | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1;
+}
+
+vml_info () {
+   VM_CONF=`get_config_file_name "${VM_NAME}"`;
+   
+   if [ -z "${VM_CONF}" ]; then
+      fatal_error "Couldn't find VM config file";
+   fi
+   
+   . ${VM_CONF};
+   
+   NICE_VM_MEMORY=`NiceSize $(( ${VM_MEMORY} * 1024 * 1024 ))`;
+   NICE_OS=`vml_quirk_to_text ${VM_QUIRK}`;
+   
+   echo "VM Name:       ${VM_NAME}";
+   echo "OS:            ${NICE_OS}";
+   echo "CPU Cores:     ${VM_CPUS}";
+   echo "RAM:           ${NICE_VM_MEMORY}";
+   echo "Auto-start:    ${VM_ONBOOT}";
+   echo "";
+   
+   if [ -n "${VM_BOOT_ZVOL}" ]; then
+      ZPATH=`get_zpath`
+      VM_ZPOOL="${ZPATH}/${VM_BOOT_ZVOL}";
+      SIZE=`zfs get -Hp volsize ${VM_ZPOOL} | awk '{print $3}'`
+      USED=`zfs get -Hp logicalused ${VM_ZPOOL} | awk '{print $3}'`
+      NICE_SIZE=`NiceSize ${SIZE}`;
+      NICE_USED=`NiceSize ${USED}`;
+      
+      printf "%-14s %9s  %s\n" "Disk (ZVOL):" "${NICE_SIZE}" "${VM_ZPOOL} (${NICE_USED} on disk)";
+   fi
+   
+   if [ -n "${VM_DISK_FILES}" ]; then
+      for CUR_DISK_FILE_RAW in ${VM_DISK_FILES}; do
+         # -- Expand relative if needed
+         if echo "${CUR_DISK_FILE_RAW}" | grep "^/" > /dev/null; then
+            CUR_DISK_FILE="${CUR_DISK_FILE_RAW}"
+         else
+            CUR_DISK_FILE="${SCRIPTPATH}/${CUR_DISK_FILE_RAW}";
+         fi
+         if [ -e "${CUR_DISK_FILE}" ]; then
+            SIZE=`stat -f %z "${CUR_DISK_FILE}"`;
+            NICE_SIZE=`NiceSize ${SIZE}`;
+         else
+            NICE_SIZE="--";
+         fi
+         
+         printf "%-14s %9s  %s\n" "Disk (File):" "${NICE_SIZE}" "${CUR_DISK_FILE}";
+      done
+   fi
+   
+   echo "";
+   for NIC_NO in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      PREFIX_TAP="VM_N${NIC_NO}_TAP_NUM"
+      TAP_NO=`eval echo "\$""$PREFIX_TAP"`
+      
+      if [ -n "${TAP_NO}" ]; then
+         TAP_DEV="tap${TAP_NO}";
+         CUR_BRIDGE=`vml_get_tap_bridge "${TAP_DEV}"`;
+         
+         if [ -z "${CUR_BRIDGE}" ]; then
+            echo "  NIC ${NIC_NO}: (${TAP_DEV})";
+         else
+            CUR_BRIDGE_NAME=`vml_get_bridge_name ${CUR_BRIDGE}`;
+            if [ -z "${CUR_BRIDGE_NAME}" ]; then
+               printf "NIC %-2s -> %-6s -> %s\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE}";
+            else
+               printf "NIC %-2s -> %-6s -> %s (%s)\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE_NAME}" "${CUR_BRIDGE}";
+               #echo "NIC ${NIC_NO}: (${TAP_DEV}) -> ${CUR_BRIDGE_NAME} (${CUR_BRIDGE})";
+            fi
+         fi
+      fi
+   done
+}
 
 vml_list () {
    vml_check_cond_show
@@ -863,6 +992,7 @@ bmt create <vm name> [ -V VOLSIZE[K,M,G,T etc ]
 bmt clone <vm name> <new vm name>
 bmt destroy <vm_name>
 bmt edit <vm_name>
+bmt info <vm_name>
 bmt list 
 bmt rcstart
 bmt rcstop
@@ -927,7 +1057,7 @@ vml_create () {
       fi
    fi
    
-   ZPATH=`zfs list -o name,mountpoint | grep $VM_LIVES | head -n 1 | cut -d " " -f1`
+   ZPATH=`get_zpath`
    
    if ! zfs create "$ZPATH/$VM_NAME"; then
       fatal_error "Couldn't create zvol '$ZPATH/$VM_NAME'";
@@ -1170,6 +1300,12 @@ SCRIPT=$(readlink -f "$0")
          ROOT_REQUIRED="NO"
       ;;
 
+      info)
+         BONUS_REQUIRED="NO"
+         VM_REQUIRED="YES"
+         ROOT_REQUIRED="NO"
+      ;;
+
       list)
          BONUS_REQUIRED="NO"
          VM_REQUIRED="NO"
@@ -1307,7 +1443,7 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
    . "${VM_ROOT}/vm.conf"
 
    SCRIPTPATH="$VM_ROOT"
-   ZPATH=`zfs list -o name,mountpoint | sed -e s:"//":"/":g | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1`
+   ZPATH=`get_zpath`
 
    if [ -z "${ZPATH}" ]; then
       echo " >>> ERROR: Could not establish ZPATH for $VM_ROOT";
