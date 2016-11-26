@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.20"
+VERSION="0.1.21"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -1178,7 +1178,7 @@ vml_quirk_to_text () {
    case $VM_QUIRK in
       0) VM="FreeBSD";;
       1) VM="CentOS 6";;
-      2) VM="Centos 7";;
+      2) VM="CentOS 7";;
       3) VM="Ubuntu";;
       5) VM="Arch";;
       6) VM="NetBSD";;
