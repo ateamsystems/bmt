@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.21"
+VERSION="0.1.22"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -21,6 +21,9 @@ if [ -r "/usr/local/etc/bmt.conf" ]; then
 fi
 
 vml_start () {
+      if [ "${ARG_BONUS}" == "-d" ]; then
+         BMT_DEBUG="YES"; 
+      fi
       # Screen
       if [ "$IN_SCREEN" != "YES" -a -z "${BMT_DEBUG}" ]; then
          if [ -z "${BMT_DEBUG}" ]; then
@@ -1043,7 +1046,7 @@ bmt netmap
 bmt receive [new_vm_name]
 bmt rename <current vm name> <new vm name>
 bmt send <vm_name>
-bmt start <vm_name>
+bmt start <vm_name> [ -d ]
 bmt status <vm_name>
 bmt stop <vm_name> [ -f ]"
 }
