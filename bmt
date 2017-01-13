@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.22"
+VERSION="0.1.23"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -622,7 +622,12 @@ vml_netmap () {
 }
 
 get_zpath () {
-   zfs list -o name,mountpoint | sed -e s:"//":"/":g | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1;
+   ZPATH=`zfs list -o name,mountpoint | sed -e s:"//":"/":g | grep $SCRIPTPATH | cut -d " " -f1 | head -n 1`;
+   if [ -z "${ZPATH}" ]; then
+      fatal_error "Couldn't get ZPATH";
+   else
+      echo "${ZPATH}";
+   fi
 }
 
 vml_info () {
@@ -1101,13 +1106,11 @@ vml_create () {
       fi
    fi
    
-   ZPATH=`get_zpath`
-   
-   if ! zfs create "$ZPATH/$VM_NAME"; then
-      fatal_error "Couldn't create zvol '$ZPATH/$VM_NAME'";
+   if ! zfs create "${BASE_ZPATH}/$VM_NAME"; then
+      fatal_error "Couldn't create zvol '$BASE_ZPATH/$VM_NAME'";
    fi
-   if ! zfs create -V "$ZVOL_SIZE" -o refreservation=none "$ZPATH/$VM_NAME/disk"; then
-      fatal_error "Couldn't create zvol '$ZPATH/$VM_NAME/disk'";
+   if ! zfs create -V "$ZVOL_SIZE" -o refreservation=none "$BASE_ZPATH/$VM_NAME/disk"; then
+      fatal_error "Couldn't create zvol '$BASE_ZPATH/$VM_NAME/disk'";
    fi
    
    echo "#!/bin/sh
@@ -1471,7 +1474,6 @@ if [ "$VM_REQUIRED" == "YES" ] ; then
    fi
 
    vml_require_exist
-   
 
    # Source the configuration
    VM_ROOT="${VM_LIVES}/${VM_NAME}"
