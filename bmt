@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.23"
+VERSION="0.1.24"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -973,6 +973,14 @@ vml_rename () {
 }
 
 vml_send () {
+   # -- Make sure this VM has no zvols that are clones (and thus won't copy)
+   VM_ZVOL_LIST=`zfs list -o name | egrep "^${ZPATH}(/|$)"`;
+   for CUR_ZVOL in ${VM_ZVOL_LIST}; do
+       CUR_ORIGIN=`zfs get -H -o value origin ${CUR_ZVOL}`;
+       if [ "${CUR_ORIGIN}" != "-" ]; then
+	  fatal_error "${CUR_ZVOL} is a clone of another zvol or is the source of another clone.   Sending it somewhere isn't going to work because its reference will be missing.  Use 'zfs promote ${CUR_ZVOL}' to detach it from it's base and send again.  You may need to run that command multiple times if it's a nested clone.";
+       fi
+   done
    if [ "$FORCE" == "YES" ]; then
       vml_stop
       echo "Waiting for vm to poweroff..."
