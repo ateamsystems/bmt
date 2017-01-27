@@ -1,6 +1,12 @@
 # BMT - Bhyve Management Tool
 
-This is a super lightweight yet very functional tool to manage Bhyve VMs on FreeBSD.  It needs only `/bin/sh` and a ZFS volume to place VMs into (UFS is not supported).
+This is a super lightweight yet very functional tool to manage Bhyve VMs on FreeBSD.  It needs:
+
+* `/bin/sh`
+* A ZFS volume to place VMs into (UFS is not supported)
+* GNU screen (`pkg install screen`)
+* Grub2 Bhyve loader (`pkg install grub2-bhyve`)
+* BHyve UEFI Firmware, if you'll be running Windows VMs (`pkg install -y bhyve-firmware`)
 
 It supports most UNIX OSes and Window,  handles auto-booting VMs at system start and shutting them down at system shutdown/reboot.
 
@@ -75,11 +81,17 @@ To start a VM:
 
 (Where "vmname" is the name you gave it).
 
+### Attach To Console
+
+To attach to the text console:
+
+`mt attach vmname`
+
 ## Networking
 
 By default with `AUTO_NETWORKING="YES"` set for a VM, a TAP device will automatically be created and assigned to bridge0 (for the example below).
 
-*NOTE:* It will not automatically create bridge0, you still need to set that up in `/etc/rc.conf` and `ifconfig`/
+*NOTE:* It will not automatically create bridge0, you still need to set that up in `/etc/rc.conf` and `ifconfig`
 
 This auto-provisioning can be overridden via these config blocks:
 
