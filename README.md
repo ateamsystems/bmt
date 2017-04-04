@@ -5,10 +5,10 @@ This is a super lightweight yet very functional tool to manage Bhyve VMs on Free
 * `/bin/sh`
 * A ZFS volume to place VMs into (UFS is not supported)
 * GNU screen (`pkg install screen`)
-* Grub2 Bhyve loader (`pkg install grub2-bhyve`)
+* Grub2 Bhyve loader (`pkg install grub2-bhyve`), if you'll be running Linux VMs
 * BHyve UEFI Firmware, if you'll be running Windows VMs (`pkg install -y bhyve-firmware`)
 
-It supports most UNIX OSes and Window,  handles auto-booting VMs at system start and shutting them down at system shutdown/reboot.
+It supports most UNIX OSes and Windows, handles auto-booting VMs at system start and shutting them down at system shutdown/reboot.
 
 ## Initial Setup
 
@@ -23,7 +23,7 @@ If you wish to have this somewhere else (ie; if you wish to place it on a differ
 BASE_ZPATH="zssd/vms" 
 ```
 
-Where zssd is your preferred base ZFS.
+Where `zssd` is your preferred ZPOOL, and `vms` is a standard dataset.
 
 ### Init
 
@@ -36,7 +36,7 @@ bmt rcstart &&
 bmt setup
 ```
 
-It is best to reboot after this just to be sure everything is applied.
+It is best to reboot after this just to be ensure things will start properly on reboot.
 
 ## Usage
 
@@ -85,7 +85,55 @@ To start a VM:
 
 To attach to the text console:
 
-`mt attach vmname`
+`bmt attach vmname`
+
+### Clone
+
+To clone a vm:
+
+`bmt clone vmname new-vmname`
+
+### Destroy
+
+To destroy a vm, it must be off:
+
+`bmt destroy vmname`
+
+### Status
+
+To see the status of a vm:
+
+`bmt status vmname`
+
+### Block until vm stops
+
+This command will block until a vm powers off:
+
+`bmt wait_for_poweroff vmname`
+
+### Send/Receive
+
+The vm send/receive functionality works very similar to zfs.
+
+This example sends the vm to a compressed file:
+
+`bmt send vmname | xz > vmname.bmt.xz`
+
+This example receives a vm from a compressed file:
+
+`xzcat vmname.bmt.xz | bmt receive vmname`
+
+This example sends a vm between hosts:
+
+`bmt send vmname | ssh user@host bmt receive vmname`
+
+### Get/Set
+
+You can get and set parts of the vm configuration with these commands:
+
+`bmt get vmname VM_CPUS`
+
+`bmt set vmname VM_CPUS 2`
 
 ## Networking
 
