@@ -1074,7 +1074,7 @@ vml_getreal () {
    
    # make sure that variable exists in the config
    if [ "`grep ${ARG_BONUS}= ${VM_LIVES}/${VM_NAME}/vm.conf | wc -l | tr -d " "`" == 1 ]; then
-      echo `cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep ${ARG_BONUS} | tr -d " " | cut -d = -f2 | tr -d \"`
+      echo `cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep ${ARG_BONUS} | tr -d " " | cut -d = -f2 | tr -d \" | cut -d \# -f1`
    else
       echo "unset"
    fi
