@@ -87,6 +87,13 @@ vml_start () {
            echo "Adding disk (zvol) $ds"
            I=$((I+1))
          done
+
+         # Get pci passthru devices
+         for pci_dev in $VM_PCI_PT; do
+           FINAL_PCI=$FINAL_PCI" -s $I,passthru,${pci_dev} "
+           echo "Adding PCI PT ${pci_dev}"
+           I=$((I+1))
+         done
          
          # Add file-based disks
          for ds in ${VM_DISK_FILES}
