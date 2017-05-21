@@ -115,3 +115,31 @@ set skip on tap21
 ```
 
 Otherwise nothing will work.  Obviously you can apply more granular control over this but this is a common issue when VM networking doesn't work.
+
+## PCI Passthru
+
+PCI passthru requires the variable `VM_PCI_PT` to be set to the PCI address of the PCI device that you would like to passthru to the VM. For example:
+```
+root@donchor--> pciconf -l -v
+re1@pci0:5:0:0:	class=0x020000 card=0x80011297 chip=0x816810ec rev=0x06 hdr=0x00
+    vendor     = 'Realtek Semiconductor Co., Ltd.'
+    device     = 'RTL8111/8168/8411 PCI Express Gigabit Ethernet Controller'
+    class      = network
+    subclass   = ethernet
+```
+
+If I wanted to pass this network card through to a VM, I would use the PCI address 5/0/0 (derived from the string `re1@pci0:5:0:0` [last three digits, replace colons with slashes]).
+
+Now that we have the PCI address, things get easier. On the VM in question's configuration, add a line like this:
+```
+VM_PCI_PT="5/0/0"
+```
+
+Finally, you need to keep an aggregate list of devices that bhyve is using in `/boot/loader.conf`. In our example above, we use `5/0/0`, and another VM is using `6/0/0`. My aggregate entry in `/boot/loader.conf` would look like this:
+```
+pptdevs="5/0/0 6/0/0"
+```
+
+At boot time, bhyve will attach to these devices early before the kernel has a chance to decide on a driver for them. In the `pciconf` example above the string `re1@pci0:5:0:0` tells us that the kernel has already attached a driver (`re`) for the pci device. A reboot will be necessary so that bhvye can get between the kernel and driver, and shunt it into the VM once it starts.
+
+Thats it. After a reboot, your VM should have access to the PCI device!

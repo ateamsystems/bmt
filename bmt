@@ -1175,6 +1175,10 @@ VM_FRAMEBUFFER_OPTS="tcp=0.0.0.0:5900,wait"
 #
 VM_USB3="0"
 
+# -- PCI Passthru (see README.md for usage) 
+#
+VM_PCI_PT=""
+
 # -- OS Type 
 #  0 FreeBSD
 #  1 CentOS 6.x
