@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.25"
+VERSION="0.1.26"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
