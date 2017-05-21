@@ -36,7 +36,7 @@ bmt rcstart &&
 bmt setup
 ```
 
-It is best to reboot after this just to be ensure things will start properly on reboot.
+It is best to reboot after this just to be sure everything is applied.
 
 ## Usage
 
