@@ -133,7 +133,7 @@ You can get and set parts of the vm configuration with these commands:
 
 `bmt get vmname VM_CPUS`
 
-`bmt set vmname VM_CPUS 2`
+`bmt set vmname VM_CPUS=2`
 
 ## Networking
 

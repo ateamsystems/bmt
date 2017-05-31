@@ -1061,7 +1061,7 @@ bmt list
 bmt rcstart
 bmt rcstop
 bmt get <vm name> <CONFIG_VAR>
-bmt set <vm name> <CONFIG_VAR> <new value>
+bmt set <vm name> <CONFIG_VAR>=<new value>
 bmt netmap
 bmt receive [new_vm_name]
 bmt rename <current vm name> <new vm name>
@@ -1071,43 +1071,21 @@ bmt status <vm_name>
 bmt stop <vm_name> [ -f ]"
 }
 
-vml_get() {
-   vml_getreal ${VM_NAME} ${ARG_BONUS}
-}
+vml_get () {
+   echo $ARG_BONUS | grep -q \=
+   IS_SET=$?
 
-vml_getreal () {
-   VM_NAME=${1}
-   ARG_BONUS=${2}
-   
-   # make sure that variable exists in the config
-   if [ "`grep ${ARG_BONUS}= ${VM_LIVES}/${VM_NAME}/vm.conf | wc -l | tr -d " "`" == 1 ]; then
-      echo `cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep ${ARG_BONUS} | tr -d " " | cut -d = -f2 | tr -d \" | cut -d \# -f1`
-   else
-      echo "unset"
+   if [ "${IS_SET}" == "0" ]; then
+       echo "Use set instead of get"
+       exit
    fi
-
+   sysrc -nf "${VM_LIVES}/${VM_NAME}/vm.conf" ${ARG_BONUS}
 }
 
-vml_setreal () {
-   VM_NAME=${1}
-   ARG_BONUS=${2}
-   ARG_VAL=${3}
-   CUR_VAL=$( vml_getreal ${VM_NAME} ${ARG_BONUS} )  
-   if [ "`grep ${ARG_BONUS}= ${VM_LIVES}/${VM_NAME}/vm.conf | wc -l | tr -d " "`" == 1 ]; then
-      # Setting already exists, so we need to replace it dynamically.
-      sed -i.bak "s/${ARG_BONUS}=\"${CUR_VAL}\"/${ARG_BONUS}=\"${ARG_VAL}\"/g" ${VM_LIVES}/${VM_NAME}/vm.conf
-
-   else
-
-      echo "${ARG_BONUS}=\"${ARG_VAL}\"" >> ${VM_LIVES}/${VM_NAME}/vm.conf
-      echo "${VM_NAME} ${ARG_BONUS}= [unset] => ${ARG_VAL}"
-   fi
-
+vml_set () {
+   sysrc -f "${VM_LIVES}/${VM_NAME}/vm.conf" ${ARG_BONUS}
 }
 
-vml_set (){
-   vml_setreal ${VM_NAME} ${ARG_BONUS} ${ARG_VAL}
-}
 vml_create () {
    # Syntax
    # bmt create [ vm ] [ bonus ( volume size) 
@@ -1419,12 +1397,6 @@ SCRIPT=$(readlink -f "$0")
          BONUS_REQUIRED="YES"
          VM_REQUIRED="YES"
          ROOT_REQUIRED="YES"
-         if [ "${4}" == "" ]; then
-            echo "Value argument not set."
-            exit 1;
-         else
-            ARG_VAL=${4}
-         fi
       ;;
    
       setup)
