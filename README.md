@@ -87,6 +87,15 @@ To attach to the text console:
 
 `bmt attach vmname`
 
+### Execute a console command 
+
+`bmt exec <vmname> '<command>'`
+
+example:
+`bmt exec freebsd 'root'`
+`bmt exec freebsd 'pass'`
+`bmt exec freebsd 'uname'`
+
 ### Clone
 
 To clone a vm:
