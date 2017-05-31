@@ -1079,10 +1079,15 @@ vml_exec () {
    screen -S bhyve.${VM_NAME} -X stuff "${ARG_BONUS}"
    screen -S bhyve.${VM_NAME} -p0 -X eval "stuff \015"
    screen -S bhyve.${VM_NAME} -X log 
-   LINES=`cat screenlog.0 | wc -l`
+   LINES=`cat screenlog.0 | wc -l | tr -d ' '`
    HEAD_LINES=`echo "${LINES} - 1" | bc`
-   cat screenlog.0 | tail -n ${LINES} | head -n ${HEAD_LINES} 
-   rm screenlog.0
+   if [ "${HEAD_LINES}" -eq 0 ]; then
+      exit 0
+   else
+      printf ''
+      cat screenlog.0 | tail -n ${LINES} | head -n ${HEAD_LINES} 
+      rm screenlog.0
+   fi
 }
 
 vml_get () {
