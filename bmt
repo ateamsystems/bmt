@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.26"
+VERSION="0.1.27"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -1056,6 +1056,7 @@ bmt create <vm name> [ -V VOLSIZE[K,M,G,T etc ]
 bmt clone <vm name> <new vm name>
 bmt destroy <vm_name>
 bmt edit <vm_name>
+bmt exec <vm_name> '<command>' 
 bmt info <vm_name>
 bmt list 
 bmt rcstart
@@ -1069,6 +1070,23 @@ bmt send <vm_name>
 bmt start <vm_name> [ -d ]
 bmt status <vm_name>
 bmt stop <vm_name> [ -f ]"
+}
+
+# Send a command to the console of a VM #
+vml_exec () {
+   screen -S bhyve.${VM_NAME} -X log 
+   screen -S bhyve.${VM_NAME} -X stuff "${ARG_BONUS}"
+   screen -S bhyve.${VM_NAME} -p0 -X eval "stuff \015"
+   screen -S bhyve.${VM_NAME} -X log 
+   LINES=`cat screenlog.0 | wc -l | tr -d ' '`
+   HEAD_LINES=`echo "${LINES} - 1" | bc`
+   if [ "${HEAD_LINES}" -eq 0 ]; then
+      exit 0
+   else
+      printf ''
+      cat screenlog.0 | tail -n ${LINES} | head -n ${HEAD_LINES} 
+      rm screenlog.0
+   fi
 }
 
 vml_get () {
@@ -1322,6 +1340,12 @@ SCRIPT=$(readlink -f "$0")
 
       edit)
          BONUS_REQUIRED="NO"
+         VM_REQUIRED="YES"
+         ROOT_REQUIRED="YES"
+      ;;
+
+      exec)
+         BONUS_REQUIRED="YES"
          VM_REQUIRED="YES"
          ROOT_REQUIRED="YES"
       ;;
