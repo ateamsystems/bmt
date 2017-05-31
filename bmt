@@ -1061,7 +1061,6 @@ bmt info <vm_name>
 bmt list 
 bmt rcstart
 bmt rcstop
-bmt exec <vm name> <CONFIG_VAR>
 bmt get <vm name> <CONFIG_VAR>
 bmt set <vm name> <CONFIG_VAR>=<new value>
 bmt netmap
