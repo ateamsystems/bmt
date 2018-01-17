@@ -358,7 +358,7 @@ get_config_file_name () {
 }
 
 find_all_bridges () {
-   LIST=`ifconfig -a | grep bridge[0-9+]: | awk -F : '{print $1}'`;
+   LIST=`ifconfig -a | egrep "^bridge[0-9]+:" | awk -F : '{print $1}'`;
    echo "${LIST}";
 }
 
