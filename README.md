@@ -173,6 +173,14 @@ set skip on tap21
 
 Otherwise nothing will work.  Obviously you can apply more granular control over this but this is a common issue when VM networking doesn't work.
 
+If you need to, you can use the new E1000 network driver instead of the virtio-net driver by setting:
+
+```
+VM_NET_DRIVER="e1000"
+```
+
+This has proven necessary under Debian 8.10 as there is a bug somewhere that causes packets larger than 230 bytes to be truncated using virtio-net.
+
 ## PCI Passthru
 
 PCI passthru requires the variable `VM_PCI_PT` to be set to the PCI address of the PCI device that you would like to passthru to the VM. For example:
