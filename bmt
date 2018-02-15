@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.28"
+VERSION="0.1.29"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -50,6 +50,11 @@ vml_start () {
          # Figure out the PCI devices
          FINAL_PCI=""
          I=2
+         
+         # Default to virtio-net
+         if [ -z "${VM_NET_DRIVER}" ]; then
+            VM_NET_DRIVER="virtio-net";
+         fi         
 
          # Networking Devices
          for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
@@ -66,7 +71,7 @@ vml_start () {
                   ifconfig bridge$BRIDGE addm tap$TAP
                fi
 
-               FINAL_PCI=$FINAL_PCI" -s $I,virtio-net,tap$TAP "
+               FINAL_PCI=$FINAL_PCI" -s $I,${VM_NET_DRIVER},tap$TAP "
                I=$((I+1))
             fi
          done
