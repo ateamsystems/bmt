@@ -7,10 +7,13 @@
 #
 
 # Script Version
-VERSION="0.1.29"
+VERSION="0.1.30"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
+
+# Set tp '-S' to wire memory (experimental) for PCI Pass through
+WIRE_SWITCH="";
 
 # Base zpath hack
 BASE_ZPATH="zroot/vms"
@@ -126,9 +129,9 @@ vml_start () {
          # FreeBSD
          if [ "$VM_QUIRK" == "0" ]; then
             if [ "$VM_CDROM" == "1" ]; then
-               bhyveload -S -d $VM_CDROM_MEDIA -m $VM_MEMORY"M" $VM_NAME
+               bhyveload ${WIRE_SWITCH} -d $VM_CDROM_MEDIA -m $VM_MEMORY"M" $VM_NAME
             else
-               bhyveload -S -d "/dev/zvol/$ZPATH/$VM_BOOT_ZVOL" -m $VM_MEMORY"M" $VM_NAME
+               bhyveload ${WIRE_SWITCH} -d "/dev/zvol/$ZPATH/$VM_BOOT_ZVOL" -m $VM_MEMORY"M" $VM_NAME
             fi
          # Quirk CentOS 6.x
          elif [ "$VM_QUIRK" == "1" ]; then
@@ -272,7 +275,7 @@ vml_start () {
             echo "VM_QUIRK NOT SET"
          fi
 
-         /usr/sbin/bhyve -S -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 31,lpc $FINAL_PCI -l com1,stdio $USE_BOOTROM $VM_NAME
+         /usr/sbin/bhyve ${WIRE_SWITCH} -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 31,lpc $FINAL_PCI -l com1,stdio $USE_BOOTROM $VM_NAME
          bhyve_exit=$?
 
          # Clean up the vm, its time to destroy it.
