@@ -12,7 +12,7 @@ VERSION="0.1.30"
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
 
-# Set tp '-S' to wire memory (experimental) for PCI Pass through
+# Set to '-S' to wire memory (experimental) for PCI Pass through
 WIRE_SWITCH="";
 
 # Base zpath hack
