@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.30"
+VERSION="0.1.31"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -987,15 +987,30 @@ vml_rename () {
    rm ${VM_LIVES}/${ARG_BONUS}/vm.conf--  
 }
 
-vml_send () {
+zvol_clone_check () {
    # -- Make sure this VM has no zvols that are clones (and thus won't copy)
-   VM_ZVOL_LIST=`zfs list -o name | egrep "^${ZPATH}(/|$)"`;
+   VM_ZVOL_BASE="$1";
+   
+   if [ -z "${VM_ZVOL_BASE}" ]; then
+      return 1;
+   fi
+   
+   VM_ZVOL_LIST=`zfs list -o name | egrep "^${VM_ZVOL_BASE}(/|$)"`;
    for CUR_ZVOL in ${VM_ZVOL_LIST}; do
        CUR_ORIGIN=`zfs get -H -o value origin ${CUR_ZVOL}`;
        if [ "${CUR_ORIGIN}" != "-" ]; then
-	  fatal_error "${CUR_ZVOL} is a clone of another zvol or is the source of another clone.   Sending it somewhere isn't going to work because its reference will be missing.  Use 'zfs promote ${CUR_ZVOL}' to detach it from it's base and send again.  You may need to run that command multiple times if it's a nested clone.";
+          return 1
        fi
    done
+   return 0
+}
+
+vml_send () {
+   # -- Make sure this VM has no zvols that are clones (and thus won't copy)
+   if ! zvol_clone_check "${ZPATH}"; then
+      fatal_error "${CUR_ZVOL} is a clone of another zvol or is the source of another clone.   Sending it somewhere isn't going to work because its reference will be missing.  Use 'zfs promote ${CUR_ZVOL}' to detach it from it's base and send again.  You may need to run that command multiple times if it's a nested clone.";
+   fi
+
    if [ "$FORCE" == "YES" ]; then
       vml_stop
       echo "Waiting for vm to poweroff..."
@@ -1044,6 +1059,12 @@ vml_require_off () {
 }
 
 vml_receive () {
+   # Special hook for 'bmt scp' pre-send test
+   if [ "${VM_NAME}"x == "_scp_test_nop_ivpk5t_"x ]; then
+      #echo "Remote command test success.";
+      exit 0;
+   fi
+
    vml_require_no_exist
    zfs receive ${BASE_ZPATH}/${VM_NAME}
    OLD_VM_NAME=`cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep VM_NAME`
@@ -1077,7 +1098,8 @@ bmt rename <current vm name> <new vm name>
 bmt send <vm_name>
 bmt start <vm_name> [ -d ]
 bmt status <vm_name>
-bmt stop <vm_name> [ -f ]"
+bmt stop <vm_name> [ -f ]
+bmt scp <vm_name> <remote-server:vm_name>"
 }
 
 # Send a command to the console of a VM #
@@ -1250,7 +1272,62 @@ vml_sanity () {
       echo "BMT does not appear to be set up yet. Please run bmt setup."
       exit
    fi
+}
 
+vml_scp () {
+   # -- Make sure this VM has no zvols that are clones (and thus won't copy)
+   if ! zvol_clone_check "${ZPATH}"; then
+      fatal_error "${CUR_ZVOL} is a clone of another zvol or is the source of another clone.   Sending it somewhere isn't going to work because its reference will be missing.  Use 'zfs promote ${CUR_ZVOL}' to detach it from it's base and send again.  You may need to run that command multiple times if it's a nested clone.";
+   fi
+   
+   if [ "$FORCE" == "YES" ]; then
+      vml_stop
+      echo "Waiting for vm to poweroff..."
+      vml_wait_for_poweroff
+      echo "VM Powered off"
+   else
+      vml_stat
+   
+      if [ "$?" == "1" ]; then
+         echo "VM is running. Use -f flag to shutdown before migration"
+         exit
+      fi
+   fi 
+   
+   # Work out remote server and VM name
+   REMOTE_SERVER=`echo "${ARG_BONUS}" | awk -F : '{print $1}'`;
+   REMOTE_VM_NAME=`echo "${ARG_BONUS}" | awk -F : '{print $2}'`;
+   
+   if [ -z "${REMOTE_SERVER}" ]; then
+      fatal_error "missing remote server (check arg format)"
+   fi
+   
+   if [ -z "${REMOTE_VM_NAME}" ]; then
+      fatal_error "missing remote vm name (check arg format)"
+   fi
+   
+   # Actually do the export
+   SNAPSHOT_NAME="`date +'%s'`_scp"
+   
+   # Work out the remote user to use
+   REMOTE_USER="${SUDO_USER}";
+   SUDO_COMMAND="sudo";
+   if [ -z "${REMOTE_USER}" ]; then
+      REMOTE_USER="${USER}";
+      SUDO_COMMAND="";
+   fi
+   
+   # Test sudo
+   if ! ssh ${REMOTE_USER}@${REMOTE_SERVER} ${SUDO_COMMAND} -n /usr/local/ateam/sbin/bmt receive _scp_test_nop_ivpk5t_; then
+      echo "";
+      fatal_error "Testing sudo failed";
+   fi
+   
+   echo -n "Sending local VM '${VM_NAME}' to server '${REMOTE_SERVER}' as remote VM '${REMOTE_VM_NAME}' ... ";
+   zfs snapshot -r ${ZPATH}@${SNAPSHOT_NAME}
+   zfs send -R ${ZPATH}@${SNAPSHOT_NAME} | ssh ${REMOTE_USER}@${REMOTE_SERVER} ${SUDO_COMMAND} -n /usr/local/ateam/sbin/bmt receive ${REMOTE_VM_NAME};
+   zfs destroy ${ZPATH}@${SNAPSHOT_NAME}
+   echo "Done!";
 }
 
 ############################################## MAIN
@@ -1321,6 +1398,11 @@ SCRIPT=$(readlink -f "$0")
          ROOT_REQUIRED="YES"
       ;;
 
+      scp)
+         BONUS_REQUIRED="YES"
+         VM_REQUIRED="YES"
+         ROOT_REQUIRED="YES"
+      ;;
       clone)
          BONUS_REQUIRED="YES"
          VM_REQUIRED="YES"
