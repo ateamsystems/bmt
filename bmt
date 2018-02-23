@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.31"
+VERSION="0.1.32"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -15,15 +15,30 @@ VM_LIVES="/usr/local/vms"
 # Set to '-S' to wire memory (experimental) for PCI Pass through
 WIRE_SWITCH="";
 
+# Where to start generating tap devices when AUTO_NETWORKING is used and no VM tap is specified manually
+TAP_START="20";
+
+# Sanity limit to auto-tap generation
+TAP_MAX="200";
+
 # Base zpath hack
 BASE_ZPATH="zroot/vms"
+
+# Runtime stuff
+RUN_DIR="/var/run/bmt"
 
 # Load config file if present
 if [ -r "/usr/local/etc/bmt.conf" ]; then
    . /usr/local/etc/bmt.conf;
 fi
 
+# Setup a space to log what tap/bridges are allocated for netmap
+VM_STATE_DIR="${RUN_DIR}/vmstate"
+mkdir -p ${VM_STATE_DIR} > /dev/null;
+
 vml_start () {
+      VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
+      
       if [ "${ARG_BONUS}" == "-d" ]; then
          BMT_DEBUG="YES"; 
       fi
@@ -41,7 +56,9 @@ vml_start () {
       
       # Reboot loop
       while [ 1 ]; do
-
+         echo -n > ${VM_STATE_FILE};
+         AUTO_NETWORKING_GEN_INTS="" # List of interfaces auto-created <interface>:<bridge>
+         
          # Execute the pre command
          if [ "${VM_PRE_CMD}" != "" ]; then
             `${VM_PRE_CMD}`
@@ -65,18 +82,48 @@ vml_start () {
             BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
             PREFIX_TAP="VM_N${j}_TAP_NUM"
             TAP=`eval echo "\$""$PREFIX_TAP"`
+            CUR_NIC_NO="${j}";
             
-            if [ "$TAP" != "" ]; then
-
-               if [ "$AUTO_NETWORKING" == "YES" ]; then
-                  ifconfig tap${TAP} create 
-#                    TAP=`ifconfig tap create | tr -d "\n"`
-                  ifconfig bridge$BRIDGE addm tap$TAP
+            if [ "$AUTO_NETWORKING" == "YES" ]; then
+               if [ -n "${BRIDGE}" ]; then
+                  if [ -z "${TAP}" ]; then
+                     # No tap specified, allocate a new one
+                     TAP=`get_next_free_tap`
+                     if [ -z "${TAP}" ]; then
+                        fatal_error "Couldn't allocate free tap (${TAP})"
+                     else
+                        echo "VM:${VM_NAME} NIC #${CUR_NIC_NO} (${VM_NET_DRIVER}) assigned tap${TAP} to bridge${BRIDGE}";
+                     fi
+                  fi
+                  
+                  if [ -n "$TAP" ]; then
+                     # -- Create specified tap
+                     ifconfig tap${TAP} create;
+                     AUTO_NETWORKING_GEN_INTS="${AUTO_NETWORKING_GEN_INTS} ${TAP}:${BRIDGE}";
+                     
+                     # -- Record what was allocated into the state file so it can be sourced later
+                     #    for stuff like 'bmt netmap'
+                     #
+                     # This could probably be safely moved out of the
+                     # AUTO_NETWORKING==YES if and down to the FINAL_PCI area
+                     echo "VM_N${CUR_NIC_NO}_BRIDGE_NUM=${BRIDGE}" >> ${VM_STATE_FILE};
+                     echo "VM_N${CUR_NIC_NO}_TAP_NUM=${TAP}" >> ${VM_STATE_FILE};
+                     
+                     CUR_NIC_NO=$((CUR_NIC_NO+1))
+                  fi
                fi
-
+            fi
+            
+            # -- Add to bridge
+            if [ -n "$TAP" ]; then
+               if [ -z "${BRIDGE}" ]; then
+                  fatal_error "tap${TAP} has no associated bridge, check VM config for VM_N${CUR_NIC_NO}_BRIDGE_NUM";
+               fi
+               ifconfig bridge$BRIDGE addm tap$TAP
                FINAL_PCI=$FINAL_PCI" -s $I,${VM_NET_DRIVER},tap$TAP "
                I=$((I+1))
             fi
+            
          done
 
          # Scrape any zvols from our current dataset as disks
@@ -277,10 +324,21 @@ vml_start () {
 
          /usr/sbin/bhyve ${WIRE_SWITCH} -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 31,lpc $FINAL_PCI -l com1,stdio $USE_BOOTROM $VM_NAME
          bhyve_exit=$?
-
+         
          # Clean up the vm, its time to destroy it.
          bhyvectl --vm=$VM_NAME --destroy 2> /dev/null
 
+         # Tidy up any auto networking that was done
+         for PAIR in ${AUTO_NETWORKING_GEN_INTS}; do
+            TAP=`echo "${PAIR}" | awk -F : '{print $1}'`;
+            BRIDGE=`echo "${PAIR}" | awk -F : '{print $2}'`;
+            
+            echo "VM:${VM_NAME} disconnecting tap${TAP} from bridge${BRIDGE}"
+            ifconfig bridge${BRIDGE} deletem tap${TAP} #2> /dev/null
+            
+            echo "VM:${VM_NAME} removing tap${TAP}"
+            ifconfig tap${TAP} destroy #2> /dev/null
+         done
 
          # Only loop if the exit code was 0 (reboot)
          if [ $bhyve_exit -ne 0 ]; then
@@ -291,23 +349,9 @@ vml_start () {
             # -- Re-read the config file in case it's changed
             . "${VM_ROOT}/vm.conf";
          fi
-
       done
 
-      # Tidy up any auto networking that was done
-      for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
-         PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
-         BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
-         PREFIX_TAP="VM_N${j}_TAP_NUM"
-         TAP=`eval echo "\$""$PREFIX_TAP"`
-         
-         if [ "$TAP" != "" ]; then
-            if [ "$AUTO_NETWORKING" == "YES" ]; then
-               ifconfig bridge$BRIDGE deletem tap$TAP 2> /dev/null
-               ifconfig tap$TAP destroy 2> /dev/null
-            fi
-         fi
-      done
+   rm "${VM_STATE_FILE}";
    
    if [ "${VM_POST_CMD}" != "" ]; then
       `${VM_POST_CMD}`
@@ -349,6 +393,31 @@ fatal_error() {
    echo " >>> Exiting.";
    exit 1;
 }
+
+interface_exists() {
+   INT="$1";
+   if [ -z ${INT} ]; then
+      return 1
+   fi
+   
+   if ifconfig ${INT} > /dev/null 2> /dev/null; then
+      return 0
+   else
+      return 1
+   fi
+}
+
+get_next_free_tap() {
+   CUR_TRY=${TAP_START};
+   while [ ${CUR_TRY} -le ${TAP_MAX} ]; do
+      if ! interface_exists "tap${CUR_TRY}"; then
+         echo "${CUR_TRY}";
+         return
+      fi
+      CUR_TRY=$((CUR_TRY+1));
+   done
+   # Return nothing if error
+}   
 
 find_all_configs () {
    LIST=`find $VM_LIVES | grep "/vm.conf$" | sort -V -t . -k 2 -k 1`;
@@ -509,6 +578,13 @@ vml_get_tap_to_vm_map () {
       clear_vm_vars;
       
       . $vm;
+      
+      # -- Include state if there is one
+      CUR_VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
+      if [ -e "${CUR_VM_STATE_FILE}" ]; then
+         . ${CUR_VM_STATE_FILE};
+      fi
+      
       for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
          PREFIX_TAP="VM_N${j}_TAP_NUM"
          TAP=`eval echo "\$""$PREFIX_TAP"`
@@ -653,6 +729,12 @@ vml_info () {
    fi
    
    . ${VM_CONF};
+
+   # -- Include state if there is one
+   CUR_VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
+   if [ -e "${CUR_VM_STATE_FILE}" ]; then
+      . ${CUR_VM_STATE_FILE};
+   fi
    
    NICE_VM_MEMORY=`NiceSize $(( ${VM_MEMORY} * 1024 * 1024 ))`;
    NICE_OS=`vml_quirk_to_text ${VM_QUIRK}`;
@@ -1209,7 +1291,7 @@ VM_PCI_PT=""
 #  0 FreeBSD
 #  1 CentOS 6.x
 #  2 CentOS 7.x
-#  3 Ubuntu 15.04
+#  3 Ubuntu / Debian
 #  4 Fedora 23
 #  5 Arch
 #  6 NetBSD
@@ -1329,6 +1411,8 @@ vml_scp () {
    zfs destroy ${ZPATH}@${SNAPSHOT_NAME}
    echo "Done!";
 }
+
+
 
 ############################################## MAIN
 
