@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.33"
+VERSION="0.1.34"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -657,6 +657,52 @@ vml_get_bridge_name () {
    echo "${BRIDGE_NAME}"
 }
 
+get_auto_tap_bridge_to_off_vm_map () {
+   out=`find_all_configs`;
+   # -- Loop through each VM, returning a sorted list of bridgeN:vmnames
+   #    values for auto-configured taps that are  not up since they
+   #    won't show up otherwise
+   #    
+   #    ie;  bridge3:testvm
+   #
+   RET=""
+   for vm in $out; do
+      clear_vm_vars;
+      
+      . $vm;
+      
+      vml_stat
+
+      if [ "$?" == "1" ]; then
+         STATE="On"
+      else
+         STATE="Off"
+      fi      
+
+      # -- Only bother if auto networking is enabled
+      if [ "$AUTO_NETWORKING" == "YES" -a "${STATE}" == "Off" ]; then
+         # -- Include state if there is one
+         CUR_VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
+         if [ -e "${CUR_VM_STATE_FILE}" ]; then
+            . ${CUR_VM_STATE_FILE};
+         fi
+         
+         for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+            BRIDGE=`eval echo "\$""$PREFIX_BRIDGE"`
+            PREFIX_TAP="VM_N${j}_TAP_NUM"
+            TAP=`eval echo "\$""$PREFIX_TAP"`
+            
+            if [ -n "${BRIDGE}" -a -z "${TAP}" ]; then
+               RET="${RET} bridge${BRIDGE}:${VM_NAME}"
+            fi
+         done
+      fi
+   done
+   
+   echo "${RET}" | tr " " "\n" | sort -u   
+   }
+
 vml_netmap () {
    vml_check_cond_show;
    
@@ -667,45 +713,72 @@ vml_netmap () {
    echo "";
 
    TAP_MAP=`vml_get_tap_to_vm_map`;
+   AUTO_TAP_MAP=`get_auto_tap_bridge_to_off_vm_map`;
    
    # -- Loop through each bridge
    for bridge in $bridges; do
       members=`ifconfig $bridge | grep "member: " | awk '{print $2}' | sort -u`;
       
-      if [ -n "${members}" ]; then
-         echo -n "${bridge}";
-         
-         BRIDGE_NAME=`vml_get_bridge_name ${bridge}`;
-         if [ -n "${BRIDGE_NAME}" ]; then
-            echo " - ${BRIDGE_NAME}";
-         else
-            echo "";
-         fi
-         
-         echo "  |";
-         
-         # -- loop through taps
-         for CUR_DEV in $members; do
-            CUR_VM_NAME=`vml_get_tap_vm "${CUR_DEV}" "${TAP_MAP}"`;
-            
-            # -- See if dmesg has dev info
-            if [ -z "${CUR_VM_NAME}" ]; then
-               CUR_VM_NAME=`grep "^${CUR_DEV}: " /var/run/dmesg.boot | awk -F '<' '{print $2}' | awk -F '>' '{print $1}' | grep -v "^$" | head -n 1`;
-            fi
-            
-            # -- Display
-            if [ -n "${CUR_VM_NAME}" ]; then
-               printf "  +-- %5s -> %s\n" "${CUR_DEV}" "${CUR_VM_NAME}";
-            else
-               printf "  +-- %5s\n" "${CUR_DEV}";
-            fi
-         done
-         
-         echo "";
+      echo -n "${bridge}";
+      
+      BRIDGE_NAME=`vml_get_bridge_name ${bridge}`;
+      if [ -n "${BRIDGE_NAME}" ]; then
+         echo " - ${BRIDGE_NAME}";
       else
-         echo " ${bridge} - ";
          echo "";
       fi
+      
+      echo "  |";
+      
+      # -- loop through taps that exist for VMs
+      for CUR_DEV in $members; do
+         CUR_VM_NAME=`vml_get_tap_vm "${CUR_DEV}" "${TAP_MAP}"`;
+         
+         # -- See if dmesg has dev info
+         if [ -z "${CUR_VM_NAME}" ]; then
+            CUR_VM_NAME=`grep "^${CUR_DEV}: " /var/run/dmesg.boot | awk -F '<' '{print $2}' | awk -F '>' '{print $1}' | grep -v "^$" | head -n 1`;
+         fi
+         
+         # -- Display
+         if [ -n "${CUR_VM_NAME}" ]; then
+            printf "  +-- %5s -> %s\n" "${CUR_DEV}" "${CUR_VM_NAME}";
+         #else
+         #   printf "  +-- %5s\n" "${CUR_DEV}";
+         fi
+         
+      done
+      
+      # -- loop through any auto-taps that on VMs not turned on
+      CUR_BRIDGE_AUTO_VMS=`echo "${AUTO_TAP_MAP}" | egrep "^${bridge}:"`;
+      for CUR_PAIR in ${CUR_BRIDGE_AUTO_VMS}; do
+         CUR_VM_NAME=`echo "${CUR_PAIR}" | awk -F : '{print $2}'`;
+         printf "  +-- %5s -> %s\n" "(off)" "${CUR_VM_NAME}";
+      done
+      
+      # -- loop through for devices with no VM
+      #    same as first loop (above the 'off vm' loop) but will grab physical
+      #    devices so they're at the bottom
+      FIRST_DEV="";
+      for CUR_DEV in $members; do
+         CUR_VM_NAME=`vml_get_tap_vm "${CUR_DEV}" "${TAP_MAP}"`;
+         
+         # -- See if dmesg has dev info
+         if [ -z "${CUR_VM_NAME}" ]; then
+            CUR_VM_NAME=`grep "^${CUR_DEV}: " /var/run/dmesg.boot | awk -F '<' '{print $2}' | awk -F '>' '{print $1}' | grep -v "^$" | head -n 1`;
+         fi
+         
+         # -- Display
+         if [ -z "${CUR_VM_NAME}" ]; then
+            if [ -z "${FIRST_DEV}" ]; then
+               printf "  |\n";
+               FIRST_DEV="No";
+            fi
+            printf "  +-- %5s\n" "${CUR_DEV}";
+         fi
+         
+      done
+      
+      echo "";
    done
 
    #echo "Used taps: ${USED_TAPS}";
