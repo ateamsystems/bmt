@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.32"
+VERSION="0.1.33"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -846,19 +846,27 @@ vml_list () {
       else
          NICE_VM_ONBOOT="Manual";
       fi
-
+      
+      # -- Convert MiB into bytes
       VM_MEMORY=$(( ${VM_MEMORY} * 1024 * 1024 ));
 
-      TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
-      TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
-
+      if [ -n "${VM_MEMORY}" ]; then
+         TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
+      else
+         NICE_TOTAL_VM_MEMORY="n/a";
+      fi
+      
+      if [ -n "${USED_CPU}" ]; then
+         TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
+      fi
+      
       VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
       
       printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "${NICE_VM_ONBOOT}" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
    done 
 
-   NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
    NICE_TOTAL_VM_MEMORY=`NiceSize ${TOTAL_VM_MEMORY} 0`; 
+   NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
 
    printf -- "---------------------------------------------------------------------------------- -\n";
    printf "${COL_FORMAT}" "" "" "" "" "" "${NICE_TOTAL_VM_MEMORY}" "${TOTAL_USED_CPU}%" "${NICE_TOTAL_USED_MEM}";
