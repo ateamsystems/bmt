@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.34"
+VERSION="0.1.35"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -1098,8 +1098,6 @@ vml_vm_exists () {
 }
 
 vml_clone () {
-   
-
    # If the VM is running, error and exit
    if [ "$FORCE" == "YES" ]; then
       vml_stop
@@ -1110,7 +1108,7 @@ vml_clone () {
       vml_stat
    
       if [ "$?" == "1" ]; then
-         echo "VM is running. Use -f flag to shutdown before migration"
+         echo "VM is running. Use -f flag to shutdown before cloning"
          exit
       fi
    fi 
@@ -1130,6 +1128,29 @@ vml_clone () {
    # Rename the VM in the configuration file
    sed -i -- "s/VM_NAME=\"${VM_NAME}\"/VM_NAME=\"${ARG_BONUS}\"/g" ${VM_LIVES}/${ARG_BONUS}/vm.conf
    rm ${VM_LIVES}/${ARG_BONUS}/vm.conf--  
+}
+
+vml_copy () {
+   NEW_VM="${ARG_BONUS}";
+   
+   if [ -z "${NEW_VM}" ]; then
+      fatal_error "Missing new VM name (sanity check)";
+   fi
+   
+   echo -n "Copying '${VM_NAME}' to '${NEW_VM}' ... "
+   vml_send | bmt receive ${NEW_VM};
+   
+   echo "Done";
+   
+   if [ "${ARG_BONUS2}" == "-d" ]; then
+      echo -n "Removing snapshots on '${NEW_VM}' ... ";
+      SNAPSHOTS=`zfs list -t snap | egrep "^${BASE_ZPATH}/${NEW_VM}[/|@]" | awk '{print $1}'`;
+      
+      for SNAP in ${SNAPSHOTS}; do
+         zfs destroy ${SNAP};
+      done
+      echo "Done";
+   fi
 }
 
 vml_rename () {
@@ -1245,6 +1266,7 @@ USAGE:
 bmt attach <vm_name>
 bmt check
 bmt create <vm name> [ -V VOLSIZE[K,M,G,T etc ]
+bmt copy <vm name> <new vm name> [ -d ]
 bmt clone <vm name> <new vm name>
 bmt destroy <vm_name>
 bmt edit <vm_name>
@@ -1573,7 +1595,12 @@ SCRIPT=$(readlink -f "$0")
          VM_REQUIRED="YES"
          ROOT_REQUIRED="NO"
       ;;
-
+      copy)
+         BONUS_REQUIRED="YES"
+         VM_REQUIRED="YES"
+         ROOT_REQUIRED="NO"
+      ;;
+      
       create)
          BONUS_REQUIRED="NO"
          VM_REQUIRED="NO"

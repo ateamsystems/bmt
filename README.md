@@ -96,7 +96,19 @@ example:
 `bmt exec freebsd 'pass'`
 `bmt exec freebsd 'uname'`
 
+### Copy
+
+A copy creates a new free standing "thick" VM with no links to the source's volumes.
+
+To copy a vm:
+
+`bmt copy vmname new-vmname`
+
+Add `-d` to the end to destroy snapshots on the new VM to have an entirely clean copy with no snapshots.  Otherwise any snapshots on the source VM will be copied (but not linked in any way to the source VM).
+
 ### Clone
+
+A clone uses ZFS snapshots to make a new "thin" VM linked to the source.
 
 To clone a vm:
 
