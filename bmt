@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.35"
+VERSION="0.1.37"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -17,6 +17,9 @@ WIRE_SWITCH="";
 
 # Where to start generating tap devices when AUTO_NETWORKING is used and no VM tap is specified manually
 TAP_START="20";
+
+# How long to wait (in seconds) between VM starts on boot.  I found there are clock issues with the guests if too many start at once so increasing this to 10-20 seconds fixes it
+RC_START_VM_DELAY="1";
 
 # Sanity limit to auto-tap generation
 TAP_MAX="200";
@@ -828,6 +831,13 @@ vml_info () {
       NICE_USED=`NiceSize ${USED}`;
       
       printf "%-14s %9s  %s\n" "Disk (ZVOL):" "${NICE_SIZE}" "${VM_ZPOOL} (${NICE_USED} on disk)";
+      
+      VM_SNAPSHOTS=`zfs list -t snap | egrep "^${VM_ZPOOL}@" | awk '{print $1 ":" $2}'`;
+      for VM_SNAPSHOT in ${VM_SNAPSHOTS}; do
+         CUR_SNAP_NAME=`echo "${VM_SNAPSHOT}" | awk -F : '{print $1}'`;
+         CUR_SNAP_SIZE=`echo "${VM_SNAPSHOT}" | awk -F : '{print $2}'`;
+         printf "                          %9s  %s\n" "${CUR_SNAP_NAME} (${CUR_SNAP_SIZE} used by snapshot)";
+      done
    fi
    
    if [ -n "${VM_DISK_FILES}" ]; then
@@ -850,24 +860,32 @@ vml_info () {
    fi
    
    echo "";
-   for NIC_NO in 1 2 3 4 5 6 7 8 9 10 11 12; do
+   for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
+      NIC_NO="$j";
+      PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
+      CUR_BRIDGE_NO=`eval echo "\$""$PREFIX_BRIDGE"`
+      CUR_BRIDGE="bridge${CUR_BRIDGE_NO}";
       PREFIX_TAP="VM_N${NIC_NO}_TAP_NUM"
       TAP_NO=`eval echo "\$""$PREFIX_TAP"`
       
-      if [ -n "${TAP_NO}" ]; then
+      if [ -z "${TAP_NO}" ]; then
+         if [ "${AUTO_NETWORKING}" == "YES" ]; then
+            TAP_DEV="auto";
+         fi
+      else
          TAP_DEV="tap${TAP_NO}";
-         CUR_BRIDGE=`vml_get_tap_bridge "${TAP_DEV}"`;
-         
-         if [ -z "${CUR_BRIDGE}" ]; then
-            echo "  NIC ${NIC_NO}: (${TAP_DEV})";
+      fi
+      
+      if [ -n "${CUR_BRIDGE_NO}" ]; then
+         #echo "x";
+         #REAL_BRIDGE=`vml_get_tap_bridge "${TAP_DEV}"`;
+
+         CUR_BRIDGE_NAME=`vml_get_bridge_name ${CUR_BRIDGE}`;
+         if [ -z "${CUR_BRIDGE_NAME}" ]; then
+            printf "NIC %-2s -> %-6s -> %s\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE}";
          else
-            CUR_BRIDGE_NAME=`vml_get_bridge_name ${CUR_BRIDGE}`;
-            if [ -z "${CUR_BRIDGE_NAME}" ]; then
-               printf "NIC %-2s -> %-6s -> %s\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE}";
-            else
-               printf "NIC %-2s -> %-6s -> %s (%s)\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE_NAME}" "${CUR_BRIDGE}";
-               #echo "NIC ${NIC_NO}: (${TAP_DEV}) -> ${CUR_BRIDGE_NAME} (${CUR_BRIDGE})";
-            fi
+            printf "NIC %-2s -> %-6s -> %s (%s)\n" "${NIC_NO}" "${TAP_DEV}" "${CUR_BRIDGE_NAME}" "${CUR_BRIDGE}";
+            #echo "NIC ${NIC_NO}: (${TAP_DEV}) -> ${CUR_BRIDGE_NAME} (${CUR_BRIDGE})";
          fi
       fi
    done
@@ -1002,6 +1020,9 @@ echo "bhyve management tool"
          $SCRIPT start $VM_NAME
          printf "$( quick_padding $VM_NAME 20 )"
          echo "done"
+         if [ -n "${RC_START_VM_DELAY}" ]; then
+            sleep ${RC_START_VM_DELAY};
+         fi
       fi
    done
    echo "bmt init finished"   
