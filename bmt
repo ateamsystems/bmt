@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.37"
+VERSION="0.1.38"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -41,6 +41,7 @@ mkdir -p ${VM_STATE_DIR} > /dev/null;
 
 vml_start () {
       VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
+      sys_log "${VM_NAME}: start command running";
       
       if [ "${ARG_BONUS}" == "-d" ]; then
          BMT_DEBUG="YES"; 
@@ -59,6 +60,8 @@ vml_start () {
       
       # Reboot loop
       while [ 1 ]; do
+         sys_log "${VM_NAME}: preparing to start";
+         mutex_lock BMTVMStart;
          echo -n > ${VM_STATE_FILE};
          AUTO_NETWORKING_GEN_INTS="" # List of interfaces auto-created <interface>:<bridge>
          
@@ -175,6 +178,10 @@ vml_start () {
 
          # Make sure that FreeBSD can see the boot vol's partitions
          gpart list zvol/${ZPATH}/${VM_BOOT_ZVOL} >> /tmp/caker
+         
+         # -- This is so auto-TAPs and other things don't run concurrently
+         mutex_unlock BMTVMStart;
+         sys_log "${VM_NAME}: starting";         
 
          # FreeBSD
          if [ "$VM_QUIRK" == "0" ]; then
@@ -345,9 +352,11 @@ vml_start () {
 
          # Only loop if the exit code was 0 (reboot)
          if [ $bhyve_exit -ne 0 ]; then
+            sys_log "${VM_NAME}: VM shutdown detected";
             echo "VM Shutdown detected, not looping."
             break
          else
+            sys_log "${VM_NAME}: VM reboot detected";
             echo "VM Reboot detected, looping"
             # -- Re-read the config file in case it's changed
             . "${VM_ROOT}/vm.conf";
@@ -392,6 +401,7 @@ vml_status(){
 
 fatal_error() {
    MESSAGE="${1}";
+   sys_log "FATAL ERROR: ${MESSAGE}";
    echo " >>> ERROR: ${MESSAGE}";
    echo " >>> Exiting.";
    exit 1;
@@ -440,6 +450,118 @@ get_config_file_name () {
 find_all_bridges () {
    LIST=`ifconfig -a | egrep "^bridge[0-9]+:" | awk -F : '{print $1}'`;
    echo "${LIST}";
+}
+
+#
+# Writes entry to syslog
+#
+sys_log () {
+   MESSAGE="$1";
+   LOG_LEVEL="$2";
+
+   if [ -z "${SYSLOG_APPNAME}" ]; then
+      # -- Default to script's filename
+      SYSLOG_APPNAME="${0##*/}[$$]";
+   fi
+   if [ -z "${LOG_LEVEL}" ]; then
+      # - Default to notice
+      LOG_LEVEL="notice";
+   fi
+
+   logger -p local0.${LOG_LEVEL} -t "${SYSLOG_APPNAME}" "${MESSAGE}";
+}
+
+#
+# Generic Mutex Lock
+#
+mutex_lock () {
+   MUTEXNAME="$1";
+   RUNMUTEXDIR="/tmp";
+
+   LOCKDIR="${RUNMUTEXDIR}/${MUTEXNAME}";
+   PIDFILE="${LOCKDIR}/pid";
+   #sys_log "obtaining lock ${MUTEXNAME} ...";
+
+   #
+   # Based on awesome inspiration from http://wiki.bash-hackers.org/howto/mutex
+   #
+
+   NO_PID_FILE_COUNT="0";
+   while ! mkdir "${LOCKDIR}" 2> /dev/null;
+   do
+      ls -l ${LOCKDIR};
+      # ---- Lock failed
+      #
+      if ! [ -e "${PIDFILE}" ]; then
+         # ---- No PID file yet
+         #      This can actually happen with high concurrency, on alert on the 12th failure
+         #      which gives the process that got the lock 3 seconds to write it's PID
+         #      before logging this as a warning
+         
+         NO_PID_FILE_COUNT=$(( NO_PID_FILE_COUNT + 1 ));
+         if [ ${NO_PID_FILE_COUNT} -ge 12 ]; then
+            #log_write "couldn't get PID of process that has lock on ${LOCKDIR} even after waiting 3 seconds, exiting";
+            echo "WARNING: couldn't get PID of process that has lock on ${LOCKDIR} even after waiting ${NO_PID_FILE_COUNT} seconds, exiting";
+            exit 1;
+         fi
+      else
+         # ---- There is a PID file
+         #
+         NO_PID_FILE_COUNT="0";
+         
+         OTHERPID=`cat "${PIDFILE}" 2> /dev/null`;
+         if [ -n "${OTHERPID}" ]; then
+            # --- Check to see if the PID is running
+            if ! kill -0 ${OTHERPID}  &> /dev/null;
+               then
+               # --- Stale lockfile
+               rm -rf "${LOCKDIR}";
+               # --- Next loop should catch this
+            else
+               # --- Process is still running, wait a second before checking again
+               sleep 1;
+            fi
+         else
+            # -- OTHERPID is blank
+            # -- Make sure the file is still there
+            if [ -e "${PIDFILE}" ]; then
+               # -- It is, something is messed
+               #log_write "PID lock file exists ${PIDFILE} but is empty!";
+               echo "WARNING: PID lock file exists ${PIDFILE} but is empty!";
+            fi
+         fi
+      fi
+   done
+   
+   # --- Output PID
+   echo "$$" >"${PIDFILE}"; 
+   
+   # --- Lock succeeded
+   #log_write "lock ${MUTEX_NAME} obtained";
+}
+
+mutex_unlock () {
+   MUTEXNAME="$1";
+   RUNMUTEXDIR="/tmp";
+
+   if [ -z "${RUNMUTEXDIR}" ]; then
+      fatal_error "mutex_unlock RUNMUTEXDIR empty";
+   fi
+
+   if [ -z "${MUTEXNAME}" ]; then
+      fatal_error "mutex_unlock MUTEXNAME empty";
+   fi
+
+   LOCKDIR="${RUNMUTEXDIR}/${MUTEXNAME}";
+   PIDFILE="${LOCKDIR}/pid";
+
+   if [ -z "${LOCKDIR}" -o "${LOCKDIR}" == "/" ]; then
+      fatal_error "mutex_unlock LOCKDIR empty or invalid";
+   fi
+
+   rm -rf "${LOCKDIR}";
+
+   #sys_log "lock ${MUTEXNAME} released";
 }
 
 clear_vm_vars () {
@@ -742,12 +864,22 @@ vml_netmap () {
             CUR_VM_NAME=`grep "^${CUR_DEV}: " /var/run/dmesg.boot | awk -F '<' '{print $2}' | awk -F '>' '{print $1}' | grep -v "^$" | head -n 1`;
          fi
          
+         CUR_TAP_VM_COUNT=`echo "${CUR_VM_NAME}" | wc -l`;
+         if [ ${CUR_TAP_VM_COUNT} -gt 1 ]; then
+            printf "\n";
+         fi
+         
          # -- Display
          if [ -n "${CUR_VM_NAME}" ]; then
             printf "  +-- %5s -> %s\n" "${CUR_DEV}" "${CUR_VM_NAME}";
          #else
          #   printf "  +-- %5s\n" "${CUR_DEV}";
          fi
+         
+         if [ ${CUR_TAP_VM_COUNT} -gt 1 ]; then
+            printf "      WARNING: MULTIPLE VMs ON ${CUR_DEV}!\n\n";
+         fi
+         
          
       done
       
@@ -973,8 +1105,8 @@ quick_padding () {
 
 vml_rcstart () {
 
-echo "bhyve management tool"
-
+   sys_log "starting auto-boot VMs ...";
+   echo "bhyve management tool"
 
    # Kernel modules
    if [ "${bmt_kern_modules}" == "" ]; then
@@ -1026,6 +1158,7 @@ echo "bhyve management tool"
       fi
    done
    echo "bmt init finished"   
+   sys_log "auto-boot VMs started";
 }
 
 vml_wait_for_poweroff(){
@@ -1038,6 +1171,7 @@ vml_wait_for_poweroff(){
 }
 
 vml_rcstop() {
+   sys_log "shutting down vms ...";
    printf "bmt stopping all running vms: \n"
    out=`find_all_configs`;
 
@@ -1078,11 +1212,12 @@ vml_rcstop() {
    done
 
 
-
+   sys_log "vm shutdown complete";
    printf "bmt shutdown finished\n"
 }
 
 vml_stop () {
+   sys_log "${VM_NAME}: stopping";
    if [ "$ARG_FORCE" == "-f" ]; then
       bhyvectl --vm=$VM_NAME --force-poweroff
       bhyvectl --vm=$VM_NAME --destroy
@@ -1100,6 +1235,7 @@ vml_stop () {
 }
 
 vml_destroy () {
+   sys_log "${VM_NAME}: destroying";
    ARG_FORCE="YES"
    vml_stop  
    zfs destroy -r $ZPATH
