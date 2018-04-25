@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.38"
+VERSION="0.1.39"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -60,7 +60,7 @@ vml_start () {
       
       # Reboot loop
       while [ 1 ]; do
-         sys_log "${VM_NAME}: preparing to start";
+         sys_log "${VM_NAME}: initializing";
          mutex_lock BMTVMStart;
          echo -n > ${VM_STATE_FILE};
          AUTO_NETWORKING_GEN_INTS="" # List of interfaces auto-created <interface>:<bridge>
@@ -114,6 +114,8 @@ vml_start () {
                      # AUTO_NETWORKING==YES if and down to the FINAL_PCI area
                      echo "VM_N${CUR_NIC_NO}_BRIDGE_NUM=${BRIDGE}" >> ${VM_STATE_FILE};
                      echo "VM_N${CUR_NIC_NO}_TAP_NUM=${TAP}" >> ${VM_STATE_FILE};
+                     
+                     sys_log "${VM_NAME}: auto-creating tap${TAP} to bridge${BRIDGE} for NIC ${CUR_NIC_NO}";
                      
                      CUR_NIC_NO=$((CUR_NIC_NO+1))
                   fi
@@ -181,7 +183,7 @@ vml_start () {
          
          # -- This is so auto-TAPs and other things don't run concurrently
          mutex_unlock BMTVMStart;
-         sys_log "${VM_NAME}: starting";         
+         sys_log "${VM_NAME}: starting";
 
          # FreeBSD
          if [ "$VM_QUIRK" == "0" ]; then
@@ -332,8 +334,10 @@ vml_start () {
             echo "VM_QUIRK NOT SET"
          fi
 
+         sys_log "${VM_NAME}: started"
          /usr/sbin/bhyve ${WIRE_SWITCH} -c $VM_CPUS -m $VM_MEMORY"M" -A -H -w -s 0,hostbridge -s 31,lpc $FINAL_PCI -l com1,stdio $USE_BOOTROM $VM_NAME
          bhyve_exit=$?
+         sys_log "${VM_NAME}: stopped"
          
          # Clean up the vm, its time to destroy it.
          bhyvectl --vm=$VM_NAME --destroy 2> /dev/null
@@ -342,6 +346,7 @@ vml_start () {
          for PAIR in ${AUTO_NETWORKING_GEN_INTS}; do
             TAP=`echo "${PAIR}" | awk -F : '{print $1}'`;
             BRIDGE=`echo "${PAIR}" | awk -F : '{print $2}'`;
+            sys_log "${VM_NAME}: releasing tap${TAP}"
             
             echo "VM:${VM_NAME} disconnecting tap${TAP} from bridge${BRIDGE}"
             ifconfig bridge${BRIDGE} deletem tap${TAP} #2> /dev/null
@@ -352,11 +357,11 @@ vml_start () {
 
          # Only loop if the exit code was 0 (reboot)
          if [ $bhyve_exit -ne 0 ]; then
-            sys_log "${VM_NAME}: VM shutdown detected";
+            sys_log "${VM_NAME}: guest shutdown detected";
             echo "VM Shutdown detected, not looping."
             break
          else
-            sys_log "${VM_NAME}: VM reboot detected";
+            sys_log "${VM_NAME}: guest reboot detected";
             echo "VM Reboot detected, looping"
             # -- Re-read the config file in case it's changed
             . "${VM_ROOT}/vm.conf";
@@ -519,6 +524,7 @@ mutex_lock () {
                # --- Next loop should catch this
             else
                # --- Process is still running, wait a second before checking again
+               sys_log "waiting for ${MUTEXNAME} lock";
                sleep 1;
             fi
          else
