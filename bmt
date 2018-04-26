@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.39"
+VERSION="0.1.40"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -41,15 +41,19 @@ mkdir -p ${VM_STATE_DIR} > /dev/null;
 
 vml_start () {
       VM_STATE_FILE="${VM_STATE_DIR}/${VM_NAME}.state";
-      sys_log "${VM_NAME}: start command running";
-      
       if [ "${ARG_BONUS}" == "-d" ]; then
          BMT_DEBUG="YES"; 
       fi
+      
+      SCREEN_LOGGING_FLAGS="";
+      if [ "${VM_CONSOLE_LOG}" ]; then
+         SCREEN_LOGGING_FLAGS="-L -Logfile ${VM_CONSOLE_LOG}";
+      fi
+      
       # Screen
       if [ "$IN_SCREEN" != "YES" -a -z "${BMT_DEBUG}" ]; then
          if [ -z "${BMT_DEBUG}" ]; then
-            `/usr/local/bin/screen -dmS bhyve."$VM_NAME" "$SCRIPT" start $VM_NAME is &`
+            `/usr/local/bin/screen ${SCREEN_LOGGING_FLAGS} -dmS bhyve."$VM_NAME" "$SCRIPT" start $VM_NAME is &`
             exit;
          else
             echo "Debugging mode enabled, not launching in screen";
@@ -57,6 +61,7 @@ vml_start () {
             exit;
          fi
       fi
+      sys_log "${VM_NAME}: start command running";
       
       # Reboot loop
       while [ 1 ]; do
