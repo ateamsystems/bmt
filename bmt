@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.40"
+VERSION="0.1.41"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -46,7 +46,7 @@ vml_start () {
       fi
       
       SCREEN_LOGGING_FLAGS="";
-      if [ "${VM_CONSOLE_LOG}" ]; then
+      if [ -n "${VM_CONSOLE_LOG}" ]; then
          SCREEN_LOGGING_FLAGS="-L -Logfile ${VM_CONSOLE_LOG}";
       fi
       
