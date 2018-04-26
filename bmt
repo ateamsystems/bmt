@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.41"
+VERSION="0.1.42"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -497,12 +497,13 @@ mutex_lock () {
    #
 
    NO_PID_FILE_COUNT="0";
+   LOCK_WAIT="0";
    while ! mkdir "${LOCKDIR}" 2> /dev/null;
    do
-      ls -l ${LOCKDIR};
       # ---- Lock failed
       #
       if ! [ -e "${PIDFILE}" ]; then
+         ls -l ${PIDFILE};
          # ---- No PID file yet
          #      This can actually happen with high concurrency, on alert on the 12th failure
          #      which gives the process that got the lock 3 seconds to write it's PID
@@ -511,24 +512,34 @@ mutex_lock () {
          NO_PID_FILE_COUNT=$(( NO_PID_FILE_COUNT + 1 ));
          if [ ${NO_PID_FILE_COUNT} -ge 12 ]; then
             #log_write "couldn't get PID of process that has lock on ${LOCKDIR} even after waiting 3 seconds, exiting";
-            echo "WARNING: couldn't get PID of process that has lock on ${LOCKDIR} even after waiting ${NO_PID_FILE_COUNT} seconds, exiting";
+            sys_log "WARNING: couldn't get PID of process that has lock on ${LOCKDIR} even after waiting ${NO_PID_FILE_COUNT} seconds, exiting";
+            echo "BMT WARNING: couldn't get PID of process that has lock on ${LOCKDIR} even after waiting ${NO_PID_FILE_COUNT} seconds, exiting";
             exit 1;
          fi
       else
          # ---- There is a PID file
          #
          NO_PID_FILE_COUNT="0";
+
+         LOCK_WAIT=$(( LOCK_WAIT + 1 ));
+         if [ ${LOCK_WAIT} -ge 60 ]; then
+            sys_log "WARNING: couldn't get lock for ${MUTEXNAME} after waiting ${LOCK_WAIT} seconds, exiting";
+            echo "BMT WARNING: couldn't get lock for ${MUTEXNAME} after waiting ${LOCK_WAIT} seconds, exiting";
+            exit 1;
+         fi
          
          OTHERPID=`cat "${PIDFILE}" 2> /dev/null`;
          if [ -n "${OTHERPID}" ]; then
             # --- Check to see if the PID is running
-            if ! kill -0 ${OTHERPID}  &> /dev/null;
+            if ! kill -0 ${OTHERPID} 2> /dev/null;
                then
                # --- Stale lockfile
+               sys_log "removing stale PID lock file for ${MUTEXNAME}";
                rm -rf "${LOCKDIR}";
                # --- Next loop should catch this
             else
                # --- Process is still running, wait a second before checking again
+               echo "BMT: waiting for ${MUTEXNAME} lock";
                sys_log "waiting for ${MUTEXNAME} lock";
                sleep 1;
             fi
@@ -538,7 +549,8 @@ mutex_lock () {
             if [ -e "${PIDFILE}" ]; then
                # -- It is, something is messed
                #log_write "PID lock file exists ${PIDFILE} but is empty!";
-               echo "WARNING: PID lock file exists ${PIDFILE} but is empty!";
+               sys_log "WARNING: PID lock file exists for ${MUTEXNAME} but is empty";
+               echo "BMT WARNING: PID lock file exists ${MUTEXNAME} but is empty!";
             fi
          fi
       fi
