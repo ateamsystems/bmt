@@ -7,7 +7,7 @@
 #
 
 # Script Version
-VERSION="0.1.42"
+VERSION="0.1.43"
 
 # What directory do the vms live in?
 VM_LIVES="/usr/local/vms"
@@ -1432,7 +1432,7 @@ vml_receive () {
    vml_require_no_exist
    zfs receive ${BASE_ZPATH}/${VM_NAME}
    OLD_VM_NAME=`cat ${VM_LIVES}/${VM_NAME}/vm.conf | grep VM_NAME`
-   sed -i -- "s/${OLD_VM_NAME}/VM_NAME=\"${VM_NAME}\"/g" ${VM_LIVES}/${VM_NAME}/vm.conf
+   sysrc -f ${VM_LIVES}/${VM_NAME}/vm.conf VM_NAME="${VM_NAME}" > /dev/null;
    
 }
 
