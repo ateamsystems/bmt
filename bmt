@@ -1073,14 +1073,13 @@ vml_list () {
       . $vm
       TYPE=$( vml_quirk_to_text )
       vml_stat
+      if [ "$?" == "1" ]; then
+         STATE="On"
+      else
+         STATE="Off"
+      fi
       
       if [ "${IS_ROOT}" == "Yes" ]; then
-         if [ "$?" == "1" ]; then
-            STATE="On"
-         else
-            STATE="Off"
-         fi
-
          if [ "${STATE}" == "On" ]; then
             USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
             if [ `id -u` -eq "0" ]; then
