@@ -1049,6 +1049,16 @@ vml_info () {
 vml_list () {
    vml_check_cond_show
 
+   # -- Make sure we're root, and if not warn since 'on' etc won't display right
+   if [ `id -u`x != "0"x ]; then
+      echo "" >&2;
+      echo "WARNING: Running as non-root, VM state and other info will not be reported correctly!" >&2;
+      echo "" >&2;
+      IS_ROOT="No";
+   else
+      IS_ROOT="Yes";
+   fi
+   
    out=`find_all_configs`;
    COL_FORMAT="%-20s %-13s %-7s %-6s %4s %7s %7s %11s\n";
    
@@ -1063,28 +1073,52 @@ vml_list () {
       . $vm
       TYPE=$( vml_quirk_to_text )
       vml_stat
-
-      if [ "$?" == "1" ]; then
-         STATE="On"
-      else
-         STATE="Off"
-      fi
-
-      if [ "${STATE}" == "On" ]; then
-         USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
-         if [ `id -u` -eq "0" ]; then
-            USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
-            if [ -z "${USED_MEM_RAW}" ]; then
-               USED_MEM_RAW="0";
-            fi
-            USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
-            TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
+      
+      if [ "${IS_ROOT}" == "Yes" ]; then
+         if [ "$?" == "1" ]; then
+            STATE="On"
          else
+            STATE="Off"
+         fi
+
+         if [ "${STATE}" == "On" ]; then
+            USED_CPU=`ps aux -ww | grep "bhyve: $VM_NAME (bhyve)" | grep -v grep | awk '{print $3}' | awk -F . '{print $1}'`;
+            if [ `id -u` -eq "0" ]; then
+               USED_MEM_RAW=`bhyvectl --get-stats --vm=$VM_NAME | grep "^Resident memory" | awk '{print $3}'`;
+               if [ -z "${USED_MEM_RAW}" ]; then
+                  USED_MEM_RAW="0";
+               fi
+               USED_MEM=`NiceSize ${USED_MEM_RAW} 1`;
+               TOTAL_USED_MEM="$(( ${TOTAL_USED_MEM} + ${USED_MEM_RAW} ))";
+            else
+               USED_MEM="--";
+            fi
+         else
+            USED_CPU="0";
             USED_MEM="--";
          fi
+         
+         # -- Convert MiB into bytes
+         VM_MEMORY=$(( ${VM_MEMORY} * 1024 * 1024 ));
+         
+         if [ -n "${VM_MEMORY}" ]; then
+            TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
+         else
+            NICE_TOTAL_VM_MEMORY="n/a";
+         fi
+         
+         if [ -n "${USED_CPU}" ]; then
+            TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
+         fi
+         
+         VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
       else
-         USED_CPU="0";
-         USED_MEM="--";
+         STATE="?";
+         USED_CPU="?";
+         USED_MEM="?";
+         VM_MEMORY="?";
+         TOTAL_VM_MEMORY="?";
+         NICE_TOTAL_VM_MEMORY="?";
       fi
 
       if [ "${VM_ONBOOT}" == "YES" ]; then
@@ -1093,26 +1127,23 @@ vml_list () {
          NICE_VM_ONBOOT="Manual";
       fi
       
-      # -- Convert MiB into bytes
-      VM_MEMORY=$(( ${VM_MEMORY} * 1024 * 1024 ));
-
-      if [ -n "${VM_MEMORY}" ]; then
-         TOTAL_VM_MEMORY="$(( ${TOTAL_VM_MEMORY} + ${VM_MEMORY} ))";
-      else
-         NICE_TOTAL_VM_MEMORY="n/a";
-      fi
-      
-      if [ -n "${USED_CPU}" ]; then
-         TOTAL_USED_CPU="$(( ${TOTAL_USED_CPU} + ${USED_CPU}))";
-      fi
-      
-      VM_MEMORY=`NiceSize ${VM_MEMORY} 0`;
-      
       printf "${COL_FORMAT}" "$VM_NAME" "$TYPE" "$STATE" "${NICE_VM_ONBOOT}" "$VM_CPUS" "$VM_MEMORY" "${USED_CPU}%" "$USED_MEM";
+      
+      # -- Check for mismatched
+      if ! echo "${vm}" | egrep "/${VM_NAME}/vm.conf$" > /dev/null; then
+         echo "  ^ --- WARNING: VM name defined in vm.conf mismatches mount-point!" >&2;
+         echo "" >&2;
+      fi
    done 
 
-   NICE_TOTAL_VM_MEMORY=`NiceSize ${TOTAL_VM_MEMORY} 0`; 
-   NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
+   if [ "${IS_ROOT}" == "Yes" ]; then
+      NICE_TOTAL_VM_MEMORY=`NiceSize ${TOTAL_VM_MEMORY} 0`; 
+      NICE_TOTAL_USED_MEM=`NiceSize ${TOTAL_USED_MEM}`;
+   else
+      TOTAL_USED_CPU="??";
+      NICE_TOTAL_VM_MEMORY="??";
+      NICE_TOTAL_USED_MEM="??";
+   fi
 
    printf -- "---------------------------------------------------------------------------------- -\n";
    printf "${COL_FORMAT}" "" "" "" "" "" "${NICE_TOTAL_VM_MEMORY}" "${TOTAL_USED_CPU}%" "${NICE_TOTAL_USED_MEM}";
