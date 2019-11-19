@@ -87,10 +87,6 @@ vml_start () {
             VM_NET_DRIVER="virtio-net";
          fi         
 
-       # Default to MBR
-       if [ -z "${VM_BOOT_PART_TYPE}" ]; then
-          VM_BOOT_PART_TYPE="msdos";
-       fi
          # Networking Devices
          for j in 1 2 3 4 5 6 7 8 9 10 11 12; do
             PREFIX_BRIDGE="VM_N${j}_BRIDGE_NUM"
@@ -151,7 +147,7 @@ vml_start () {
             I=$((I+1))
             BOOT_DEVICE="cd0"
          else
-            BOOT_DEVICE="hd0,$VM_BOOT_PART_TYPE"$VM_BOOT_PART
+            BOOT_DEVICE="hd0,msdos"$VM_BOOT_PART
          fi
          for ds in `zfs list -r -H -t volume -o name $ZPATH`
          do
@@ -247,8 +243,8 @@ vml_start () {
 
                rm $SCRIPTPATH/grub.cfg
                echo "set root=($BOOT_DEVICE)" >> $SCRIPTPATH/grub.cfg
-               echo "linux (hd0,$VM_BOOT_PART_TYPE$VM_BOOT_PART)$VMLINUZ_PATH root=/dev/sda""$VM_BOOT_PART" >> $SCRIPTPATH/grub.cfg
-               echo "initrd (hd0,$VM_BOOT_PART_TYPE$VM_BOOT_PART)$INITRAMFS_PATH" >> $SCRIPTPATH/grub.cfg
+               echo "linux (hd0,msdos$VM_BOOT_PART)$VMLINUZ_PATH root=/dev/sda""$VM_BOOT_PART" >> $SCRIPTPATH/grub.cfg
+               echo "initrd (hd0,msdos$VM_BOOT_PART)$INITRAMFS_PATH" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
 
 
@@ -602,7 +598,6 @@ clear_vm_vars () {
    VM_POST_CMD=""
    VM_BOOT_ZVOL=""
    VM_BOOT_PART="1"
-   VM_BOOT_PART_TYPE=""
    VM_DISK_FILES=""
    VM_GRUB_DIR=""
    VM_CDROM=""
@@ -1569,7 +1564,6 @@ VM_POST_CMD=""       # - Command to run after exiting
 # -- Booting / Disks
 #
 VM_BOOT_ZVOL="disk"  # - The zvol sub-name to boot from
-VM_BOOT_PART_TYPE="" # - The partition scheme: msdos (default) or gpt
 VM_BOOT_PART="1"     # - The partition to boot from
 VM_DISK_FILES=""     # - Disk-file alternative to BOOT_ZVOLs
 VM_GRUB_DIR=""       # - Override the grub dir (ie; /grub2 for LVM)
