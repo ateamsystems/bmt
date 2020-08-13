@@ -218,7 +218,7 @@ vml_start () {
                   fatal_error "Couldn't create temporary mountpoint for grub.cfg generation (${MOUNTPOINT})";
                fi
                
-               if ! ext4fuse /dev/zvol/$ZPATH/$VM_BOOT_ZVOL"s"$VM_BOOT_PART $MOUNTPOINT; then
+               if ! fuse-ext2 -o rw+ /dev/zvol/$ZPATH/$VM_BOOT_ZVOL"s"$VM_BOOT_PART $MOUNTPOINT; then
                   rmdir "$MOUNTPOINT";
                   fatal_error "Couldn't mount boot partition with fuse";
                fi
@@ -1654,7 +1654,7 @@ vml_sanity () {
    done
 
    # These are the optional binaries
-   OPTIONAL_BINARIES="grub-bhyve ext4fuse"
+   OPTIONAL_BINARIES="grub-bhyve fusefs-ext2"
 
    for bin in $OPTIONAL_BINARIES; do
       if [ ! -f "`whereis -qb ${bin}`" ]; then
