@@ -386,7 +386,7 @@ vml_start () {
 
 vml_stat() {
 #  bhyvectl --vm=$VM_NAME --get-all | wc -l | tr -d " " | tr -d "\n"
-   if [ "`bhyvectl --vm=$VM_NAME --get-all | wc -l | tr -d " " | tr -d "\n"`" == "1" ]; then
+   if [ "`bhyvectl --vm=$VM_NAME --get-all 2>&1 | wc -l | tr -d " " | tr -d "\n"`" == "1" ]; then
       return 0
    else
       return 1
