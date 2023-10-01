@@ -209,7 +209,7 @@ vml_start () {
                echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
                echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
                # Generate grub.cfg
@@ -253,7 +253,7 @@ vml_start () {
 
 
                # Run Grub
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
          # Quirk CentOS 7.x
          elif [ "$VM_QUIRK" == "2" ]; then
@@ -263,13 +263,13 @@ vml_start () {
                echo "linux (cd0)/isolinux/vmlinuz" >> $SCRIPTPATH/grub.cfg
                echo "initrd (cd0)/isolinux/initrd.img" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
                if [ -z "${VM_GRUB_DIR}" ]; then
                   VM_GRUB_DIR="/boot/grub2";
                fi
-               /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk Ubuntu
@@ -277,17 +277,17 @@ vml_start () {
             if [ -z "${VM_GRUB_DIR}" ]; then
                VM_GRUB_DIR="/boot/grub";
             fi
-            /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+            /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
          # Quirk Fedora 
          elif [ "$VM_QUIRK" == "4" ]; then
             if [ "$VM_CDROM" == "1" ]; then
-               /usr/local/sbin/grub-bhyve -d /isolinux/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} -d /isolinux/ -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             else
                if [ -z "${VM_GRUB_DIR}" ]; then
                   VM_GRUB_DIR="/grub2";
                fi
-               /usr/local/sbin/grub-bhyve -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} -d ${VM_GRUB_DIR} -r $BOOT_DEVICE -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk arch         
@@ -298,10 +298,10 @@ vml_start () {
                echo "linux (cd0)/arch/boot/x86_64/vmlinuz archisobasedir=arch archisolabel=ARCH_201601" >> $SCRIPTPATH/grub.cfg
                echo "initrd (cd0)/arch/boot/x86_64/archiso.img" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk NetBSD 
@@ -311,13 +311,13 @@ vml_start () {
 #              echo "set root=(cd0)" >> $SCRIPTPATH/grub.cfg
                echo "knetbsd -h -r cd0a (cd0)/netbsd" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
                rm $SCRIPTPATH/grub.cfg
                echo "knetbsd -h -r wd0a (${BOOT_DEVICE})/netbsd" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk OpenBSD
@@ -326,13 +326,13 @@ vml_start () {
                rm $SCRIPTPATH/grub.cfg
                echo "kopenbsd -h com0 (cd0)/5.8/amd64/bsd.rd" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
 
             else
                rm $SCRIPTPATH/grub.cfg
                echo "kopenbsd -h com0 -r sd0a (hd0,openbsd${BOOT_PART})/bsd" >> $SCRIPTPATH/grub.cfg
                echo "boot" >> $SCRIPTPATH/grub.cfg
-               /usr/local/sbin/grub-bhyve --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
+               /usr/local/sbin/grub-bhyve ${WIRE_SWITCH} --directory=$SCRIPTPATH -m $SCRIPTPATH/device.map -M $VM_MEMORY $VM_NAME
             fi
 
          # Quirk Windows10
